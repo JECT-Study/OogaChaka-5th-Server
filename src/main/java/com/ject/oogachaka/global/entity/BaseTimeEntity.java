@@ -1,25 +1,20 @@
 package com.ject.oogachaka.global.entity;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.MappedSuperclass;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+/**
+ * 생성일과 수정일을 관리하는 엔티티의 공통 부모 클래스
+ */
 @Getter
 @MappedSuperclass
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
-public abstract class BaseTimeEntity {
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+public abstract class BaseTimeEntity extends BaseCreatedEntity {
 
     @LastModifiedDate
     @Column(nullable = false)
