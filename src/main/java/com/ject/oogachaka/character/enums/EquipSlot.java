@@ -7,12 +7,9 @@ public enum EquipSlot {
     /** 머리 */
     HEAD,
 
-    /** 몸통 */
+    /** 옷 */
     BODY,
 
-    /** 얼굴 */
-    FACE,
-
-    /** 등 */
-    BACK
+    /** 소품 */
+    ACCESSORY
 }
