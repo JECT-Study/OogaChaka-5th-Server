@@ -1,6 +1,7 @@
 package com.ject.oogachaka.global.config;
 
 import com.ject.oogachaka.auth.repository.AuthTokenStore;
+import com.ject.oogachaka.auth.security.AuthRequestMatchers;
 import com.ject.oogachaka.auth.security.JsonSecurityHandler;
 import com.ject.oogachaka.auth.security.JwtAuthenticationFilter;
 import com.ject.oogachaka.auth.token.JwtTokenProvider;
@@ -10,7 +11,6 @@ import java.util.List;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -39,8 +39,7 @@ public class SecurityConfig {
             .exceptionHandling(errors -> errors.authenticationEntryPoint(errorHandler).accessDeniedHandler(errorHandler))
             .authorizeHttpRequests(authorize -> authorize
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/auth/{provider}/authorize").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/social-login", "/api/v1/auth/refresh").permitAll()
+                .requestMatchers(AuthRequestMatchers.PUBLIC_ENDPOINTS).permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll())
             // Servlet 필터 빈으로 등록하지 않아 Security 체인에서만 한 번 실행한다.

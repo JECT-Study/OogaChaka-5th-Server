@@ -19,8 +19,11 @@
 5. 첫 로그인은 자동 가입한다. 닉네임은 제공자 값의 Unicode 코드 포인트 30자까지,
    미제공 시 `우가차차_<임의 8자리>`다. 역할/가족 가입은 이후 기능이다.
 
-공개 인증 API(authorize/social-login/refresh)에는 Authorization 헤더를 생략한다. 헤더가 있으면 공개 API도
-JWT 필터가 검증하므로 만료·무효 access가 있으면 401이다. state는 기본 5분이며 실패/재시도 시
+공개 인증 API(GET authorize, POST social-login/refresh)는 Authorization 헤더를 무시한다. 클라이언트의
+공통 인터셉터가 만료·무효 access를 붙여도 인가/로그인/갱신을 진행할 수 있다. 이때 access 인증 주체를
+만들거나 블랙리스트를 조회하지 않는다. refresh는 본문의 refreshToken을 별도로 검증한다.
+logout과 다른 보호 API는 계속 access 검증을 요구한다. 공개 경로와 HTTP 메서드가 정확히 일치하는 경우만
+필터를 건너뛰며, 하위 경로나 다른 메서드까지 공개하지 않는다. state는 기본 5분이며 실패/재시도 시
 authorize부터 다시 시작한다. 프런트는 로그인 시도를 안전하게 연결해야 하며 서버 state의 존재 검사만으로
 클라이언트 콜백 바인딩을 대신할 수 없다.
 
@@ -49,7 +52,8 @@ Content-Type: application/json
 }
 ```
 
-수명 필드는 초 단위다. 응답은 제공자 토큰·원본 소셜 ID·이메일을 포함하지 않는다.
+수명 필드는 초 단위다. 신규 가입 여부의 JSON 키는 `isNewUser`로 명시적으로 고정한다.
+응답은 제공자 토큰·원본 소셜 ID·이메일을 포함하지 않는다.
 이메일은 동의한 제공자가 반환한 경우에만 social_account에 평문 저장하며 255자를 넘으면 저장하지 않는다.
 제공자 프로필 이미지는 저장하지 않는다. 같은 이메일이더라도 제공자가 다르면 별도 계정이다.
 
@@ -74,6 +78,8 @@ access/refresh의 사용자 ID가 같아야 한다. 해당 refresh를 삭제하�
 인증된 다른 컨트롤러는 `@AuthenticationPrincipal Long userId`로 사용자 ID를 받는다.
 역할/권한 목록은 아직 부여하지 않으며 `/api/**`는 인증을 요구한다. 나머지 경로와 ERROR 디스패치는 허용한다.
 CORS preflight는 설정된 origin/method/header 조건에서 인증 없이 처리된다. CORS 거부도 공통 JSON 403이다.
+다중 인스턴스의 짧은 시계 차이를 위해 iat의 미래 시각은 최대 5초까지 허용한다. exp 만료와 Redis TTL은
+기존 수명대로 검증하며 만료 후 유예는 없다. 운영 서버의 시계 동기화는 별도로 유지한다.
 
 ## 오류
 
@@ -81,6 +87,7 @@ CORS preflight는 설정된 origin/method/header 조건에서 인증 없이 처�
 | --- | --- | --- |
 | 400 | INVALID_REQUEST | 요청 본문/ENUM/길이/필수 값 오류 |
 | 400 | AUTH_PROVIDER_UNSUPPORTED / AUTH_PROVIDER_DISABLED | 미지원/비활성 제공자 |
+| 400 | AUTH_SOCIAL_LOGIN_REJECTED | 인가 코드 교환 거절(429 제외 4xx 또는 OAuth error). 로그인 재시작 |
 | 401 | UNAUTHORIZED | 인증 헤더 없음 |
 | 401 | AUTH_TOKEN_EXPIRED | JWT 만료 |
 | 401 | AUTH_TOKEN_INVALID | JWT 서명/발급자/필수 클레임/종류/사용자 불일치 |
@@ -88,7 +95,7 @@ CORS preflight는 설정된 origin/method/header 조건에서 인증 없이 처�
 | 401 | AUTH_REFRESH_REUSED | Redis에 없거나 이미 교체/삭제된 refresh |
 | 401 | AUTH_STATE_INVALID | Redis state 없음/만료/재사용/제공자 불일치 |
 | 403 | FORBIDDEN | 권한 또는 CORS 거부 |
-| 502 | AUTH_SOCIAL_LOGIN_FAILED | 제공자 거절/잘못된 응답/필수 ID 누락 |
+| 502 | AUTH_SOCIAL_LOGIN_FAILED | 제공자 userinfo 거절/잘못된 응답/필수 ID 누락 |
 | 503 | AUTH_PROVIDER_UNAVAILABLE | 제공자 타임아웃/통신 장애/429/5xx |
 | 503 | AUTH_STORE_UNAVAILABLE | Redis 장애 |
 
@@ -106,6 +113,11 @@ Redis **6.2 이상**이 필요하다(GETDEL). 인증 Redis는 영속화/고가�
 키는 AuthRedisKeys에서 관리한다. 사용자별 hash tag로 refresh rotation/logout의 키를 Redis Cluster의
 같은 슬롯에 배치한다. refresh rotation과 logout은 Lua로 원자 처리한다. state는 SET NX와 GETDEL을 사용한다.
 제공자 토큰/원본 소셜 ID/이메일은 Redis에 저장하지 않는다.
+
+인가 URL 요청에는 아직 애플리케이션 자체 레이트 리밋이 없다. 공개 authorize의 요청량과 state 키 수를
+운영에서 관측하고, 배포 인프라가 정해지면 게이트웨이의 요청 제한을 먼저 구성한다. IP별 제한이 필요하면
+프록시의 신뢰 범위와 실제 클라이언트 IP 전달 계약을 확정한 뒤 적용한다. 임의의 X-Forwarded-For 값을
+신뢰하는 제한은 추가하지 않았다. state TTL을 줄이는 방식으로 요청 제한을 대체하지 않는다.
 
 ## 내일 제공자 콘솔에서 할 일
 
@@ -156,5 +168,7 @@ scheme/host/port/path/끝 슬래시까지 설정값과 일치시킨다. 서버�
   [프로필 API](https://developers.naver.com/docs/login/profile/profile.md).
 
 이번 작업은 컴파일까지만 확인했다. 테스트 실행, Docker/Redis/MySQL/Flyway 실행, 실제 제공자 호출은 하지 않았다.
-JUnit/Mockito/MockMvc 및 Testcontainers Redis 테스트는 작성되어 있으며, 실행이 허용되면 Docker와
-테스트용 Jasypt 환경변수를 준비해 검증한다. MySQL의 엔티티 validate는 기존 contextLoads 테스트에서 함께 확인한다.
+JUnit/Mockito/MockMvc 및 Testcontainers Redis/MySQL 테스트는 작성되어 있으며, 실행이 허용되면 Docker와
+테스트용 Jasypt 환경변수를 준비해 검증한다. MySQL의 실제 User/SocialAccount 매핑 validate는 기존
+contextLoads와 SocialAccountRepositoryIntegrationTest에서 확인하도록 작성했다. 후자는 V1/V2 적용,
+운영 Repository의 HMAC 조회·제공자별 UNIQUE·사용자 UNIQUE·가입 롤백·동시 최초 가입을 다룬다.

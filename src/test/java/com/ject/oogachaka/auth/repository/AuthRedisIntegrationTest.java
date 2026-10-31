@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ject.oogachaka.auth.enums.AuthProvider;
-import com.ject.oogachaka.auth.service.OAuthState;
+import com.ject.oogachaka.auth.dto.OAuthState;
 import com.ject.oogachaka.auth.token.JwtTokenProvider;
 import com.ject.oogachaka.auth.token.TokenPair;
 import com.ject.oogachaka.global.config.JwtProperties;

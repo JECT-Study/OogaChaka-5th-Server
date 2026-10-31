@@ -8,7 +8,10 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withTooManyRequests;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
 
 import com.ject.oogachaka.auth.enums.AuthProvider;
 import com.ject.oogachaka.global.config.OAuthProperties;
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
@@ -85,11 +89,39 @@ class SocialLoginClientTest {
     @Test
     void providerErrorsAndTimeoutsNeverExposeRawBodyOrCause() {
         server.expect(requestTo(TOKEN_URI)).andRespond(withBadRequest().body("TEST_ONLY_SENSITIVE_BODY"));
-        assertFailure(ErrorCode.AUTH_SOCIAL_LOGIN_FAILED);
+        assertFailure(ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED);
         server.verify();
         server.reset();
         server.expect(requestTo(TOKEN_URI)).andRespond(withException(new SocketTimeoutException("TEST_ONLY_INTERNAL_DETAILS")));
         assertFailure(ErrorCode.AUTH_PROVIDER_UNAVAILABLE);
+        server.verify();
+    }
+
+    @Test
+    void providerServerFailureAndRateLimitRemainServiceUnavailable() {
+        server.expect(requestTo(TOKEN_URI)).andRespond(withServerError());
+        assertFailure(ErrorCode.AUTH_PROVIDER_UNAVAILABLE);
+        server.verify();
+        server.reset();
+        server.expect(requestTo(TOKEN_URI)).andRespond(withTooManyRequests());
+        assertFailure(ErrorCode.AUTH_PROVIDER_UNAVAILABLE);
+        server.verify();
+    }
+
+    @Test
+    void oauthErrorInSuccessfulHttpResponseIsAlsoRejected() {
+        server.expect(requestTo(TOKEN_URI)).andRespond(withSuccess(
+            "{\"error\":\"invalid_grant\",\"error_description\":\"TEST_ONLY_SENSITIVE_BODY\"}", MediaType.APPLICATION_JSON));
+        assertThat(ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertFailure(ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED);
+        server.verify();
+    }
+
+    @Test
+    void userInfoRejectionIsProviderFailureBecauseServerOwnsProviderToken() {
+        server.expect(requestTo(TOKEN_URI)).andRespond(withSuccess("{\"access_token\":\"TEST_ONLY_PROVIDER_ACCESS\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(USER_URI)).andRespond(withUnauthorizedRequest());
+        assertFailure(ErrorCode.AUTH_SOCIAL_LOGIN_FAILED);
         server.verify();
     }
 

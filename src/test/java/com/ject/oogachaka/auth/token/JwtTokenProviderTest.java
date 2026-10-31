@@ -46,6 +46,17 @@ class JwtTokenProviderTest {
     }
 
     @Test
+    void allowsFiveSecondsOfIssuedAtClockSkewButRejectsMore() {
+        JwtTokenProvider fiveSecondsAhead = new JwtTokenProvider(properties, clockAt(NOW.plusSeconds(5)));
+        String allowed = fiveSecondsAhead.issuePair(42L).access().value();
+        assertThat(provider.validate(allowed, TokenType.ACCESS).issuedAt()).isEqualTo(NOW.plusSeconds(5));
+
+        JwtTokenProvider sixSecondsAhead = new JwtTokenProvider(properties, clockAt(NOW.plusSeconds(6)));
+        assertError(() -> provider.validate(sixSecondsAhead.issuePair(42L).access().value(), TokenType.ACCESS),
+            ErrorCode.AUTH_TOKEN_INVALID);
+    }
+
+    @Test
     void rejectsTamperedPayloadAndOtherSigningKey() {
         String token = provider.issuePair(42L).access().value();
         String[] parts = token.split("\\.");

@@ -1,5 +1,7 @@
 package com.ject.oogachaka.auth.security;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -10,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ject.oogachaka.auth.controller.AuthController;
 import com.ject.oogachaka.auth.dto.AuthorizationResponse;
+import com.ject.oogachaka.auth.dto.SocialLoginResponse;
 import com.ject.oogachaka.auth.dto.TokenResponse;
 import com.ject.oogachaka.auth.enums.AuthProvider;
 import com.ject.oogachaka.auth.enums.TokenType;
@@ -21,9 +24,13 @@ import com.ject.oogachaka.auth.token.JwtTokenProvider;
 import com.ject.oogachaka.global.config.CorsProperties;
 import com.ject.oogachaka.global.config.SecurityConfig;
 import com.ject.oogachaka.global.exception.GlobalExceptionHandler;
+import com.ject.oogachaka.global.exception.BusinessException;
 import com.ject.oogachaka.global.response.ApiResponse;
+import com.ject.oogachaka.global.response.code.ErrorCode;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -66,6 +73,36 @@ class AuthSecurityWebMvcTest {
         mvc.perform(post("/api/v1/auth/logout").contentType("application/json").content("{\"refreshToken\":\"TEST_ONLY_REFRESH\"}"))
             .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
         mvc.perform(get("/api/test/principal")).andExpect(status().isUnauthorized());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Bearer TEST_ONLY_EXPIRED", "malformed-header", "Bearer TEST_ONLY_REVOKED"})
+    void publicAuthenticationApisIgnoreAccessHeaders(String authorization) throws Exception {
+        when(jwt.validate("TEST_ONLY_EXPIRED", TokenType.ACCESS)).thenThrow(new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED));
+        when(socialLogin.authorize(AuthProvider.GOOGLE)).thenReturn(new AuthorizationResponse("https://provider.example", "s".repeat(43)));
+        when(tokens.refresh("TEST_ONLY_REFRESH")).thenReturn(new TokenResponse("Bearer", "TEST_ONLY_ACCESS", "TEST_ONLY_NEW", 1800, 1209600));
+
+        mvc.perform(get("/api/v1/auth/google/authorize").header("Authorization", authorization))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/social-login").header("Authorization", authorization).contentType("application/json")
+                .content("{\"provider\":\"GOOGLE\",\"code\":\"TEST_ONLY_CODE\",\"state\":\"" + "s".repeat(43) + "\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/refresh").header("Authorization", authorization).contentType("application/json")
+                .content("{\"refreshToken\":\"TEST_ONLY_REFRESH\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.refreshToken").value("TEST_ONLY_NEW"));
+        verifyNoInteractions(jwt, store);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void socialLoginSerializesExactIsNewUserField(boolean isNewUser) throws Exception {
+        when(socialLogin.login(any())).thenReturn(new SocialLoginResponse(42L, isNewUser,
+            new TokenResponse("Bearer", "TEST_ONLY_ACCESS", "TEST_ONLY_REFRESH", 1800, 1209600)));
+
+        mvc.perform(post("/api/v1/auth/social-login").contentType("application/json")
+                .content("{\"provider\":\"GOOGLE\",\"code\":\"TEST_ONLY_CODE\",\"state\":\"" + "s".repeat(43) + "\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.isNewUser").value(isNewUser))
+            .andExpect(jsonPath("$.data.newUser").doesNotExist());
     }
 
     @Test

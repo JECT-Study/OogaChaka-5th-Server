@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class JwtTokenProvider {
 
     private static final int MAX_TOKEN_LENGTH = 4096;
+    private static final Duration ISSUED_AT_CLOCK_SKEW = Duration.ofSeconds(5);
     private final JwtProperties properties;
     private final Clock clock;
     private final JwtParser parser;
@@ -58,7 +59,7 @@ public class JwtTokenProvider {
                 || !expectedType.getClaim().equals(claims.get("type", String.class))
                 || jti == null || !UUID.fromString(jti).toString().equals(jti)
                 || issuedAt == null || expiresAt == null || !expiresAt.after(issuedAt)
-                || issuedAt.toInstant().isAfter(clock.instant())) {
+                || issuedAt.toInstant().isAfter(clock.instant().plus(ISSUED_AT_CLOCK_SKEW))) {
                 throw invalidToken();
             }
             if (!expiresAt.toInstant().isAfter(clock.instant())) {

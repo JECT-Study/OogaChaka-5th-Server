@@ -1,4 +1,4 @@
-package com.ject.oogachaka.auth.service;
+package com.ject.oogachaka.auth.dto;
 
 import com.ject.oogachaka.auth.enums.AuthProvider;
 

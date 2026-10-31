@@ -19,6 +19,8 @@ import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -70,6 +72,32 @@ class JwtAuthenticationFilterTest {
         assertFailure(old.issuePair(42L).access().value(), "AUTH_TOKEN_EXPIRED");
         assertFailure("broken-token", "AUTH_TOKEN_INVALID");
         assertFailure(jwt.issuePair(42L).refresh().value(), "AUTH_TOKEN_INVALID");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"GET,/api/v1/auth/refresh", "POST,/api/v1/auth/google/authorize",
+        "POST,/api/v1/auth/logout", "POST,/api/v1/auth/refresh/extra", "POST,/api/test/principal"})
+    void onlyExactPublicMethodAndPathPairsSkipValidation(String method, String path) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        request.addHeader("Authorization", "malformed-header");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, (incoming, outgoing) -> {
+            throw new AssertionError("보호 경로의 JWT 검증을 건너뛰었습니다.");
+        });
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("AUTH_TOKEN_INVALID");
+    }
+
+    @Test
+    void publicMatcherHandlesContextPathWithoutAuthenticatingHeader() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/backend/api/v1/auth/refresh");
+        request.setContextPath("/backend");
+        request.addHeader("Authorization", "malformed-header");
+        AtomicBoolean called = new AtomicBoolean();
+        filter.doFilter(request, new MockHttpServletResponse(), (incoming, outgoing) -> called.set(true));
+        assertThat(called).isTrue();
+        org.mockito.Mockito.verifyNoInteractions(store);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test

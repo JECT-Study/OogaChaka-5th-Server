@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.auth.dto.AuthorizationResponse;
+import com.ject.oogachaka.auth.dto.OAuthState;
 import com.ject.oogachaka.auth.dto.SocialLoginRequest;
 import com.ject.oogachaka.auth.dto.TokenResponse;
 import com.ject.oogachaka.auth.enums.AuthProvider;

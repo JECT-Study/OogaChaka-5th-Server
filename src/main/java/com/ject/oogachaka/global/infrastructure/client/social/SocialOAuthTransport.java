@@ -25,9 +25,12 @@ public class SocialOAuthTransport {
 
     public String exchangeToken(URI uri, MultiValueMap<String, String> form) {
         JsonNode response = read(socialRestClient.post().uri(uri).contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .accept(MediaType.APPLICATION_JSON).body(new SensitiveForm(form)));
+            .accept(MediaType.APPLICATION_JSON).body(new SensitiveForm(form)), true);
+        if (response.hasNonNull("error")) {
+            throw new BusinessException(ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED);
+        }
         String token = requiredText(response, "access_token");
-        if (response.hasNonNull("error") || token.chars().anyMatch(Character::isISOControl)) {
+        if (token.chars().anyMatch(Character::isISOControl)) {
             throw failed();
         }
         return token;
@@ -35,16 +38,19 @@ public class SocialOAuthTransport {
 
     public JsonNode getUserInfo(URI uri, String token) {
         return read(socialRestClient.get().uri(uri).accept(MediaType.APPLICATION_JSON)
-            .headers(headers -> headers.setBearerAuth(token)));
+            .headers(headers -> headers.setBearerAuth(token)), false);
     }
 
-    private JsonNode read(RestClient.RequestHeadersSpec<?> request) {
+    private JsonNode read(RestClient.RequestHeadersSpec<?> request, boolean tokenExchange) {
         try {
             return request.exchange((outgoing, incoming) -> {
                 if (!incoming.getStatusCode().is2xxSuccessful()) {
-                    throw new BusinessException(incoming.getStatusCode().is5xxServerError()
-                        || incoming.getStatusCode().value() == 429
-                        ? ErrorCode.AUTH_PROVIDER_UNAVAILABLE : ErrorCode.AUTH_SOCIAL_LOGIN_FAILED);
+                    if (incoming.getStatusCode().is5xxServerError() || incoming.getStatusCode().value() == 429) {
+                        throw new BusinessException(ErrorCode.AUTH_PROVIDER_UNAVAILABLE);
+                    }
+                    // 서버가 관리하는 제공자 토큰의 userinfo 실패와 인가 코드 교환 거절을 구분한다.
+                    throw new BusinessException(tokenExchange && incoming.getStatusCode().is4xxClientError()
+                        ? ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED : ErrorCode.AUTH_SOCIAL_LOGIN_FAILED);
                 }
                 byte[] body = incoming.getBody().readNBytes(MAX_RESPONSE_BYTES + 1);
                 if (body.length > MAX_RESPONSE_BYTES) {

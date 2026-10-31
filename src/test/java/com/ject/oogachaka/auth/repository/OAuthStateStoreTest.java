@@ -6,7 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.auth.enums.AuthProvider;
-import com.ject.oogachaka.auth.service.OAuthState;
+import com.ject.oogachaka.auth.dto.OAuthState;
 import com.ject.oogachaka.global.config.OAuthProperties;
 import com.ject.oogachaka.global.exception.BusinessException;
 import com.ject.oogachaka.global.response.code.ErrorCode;

@@ -1,6 +1,7 @@
 package com.ject.oogachaka.auth.service;
 
 import com.ject.oogachaka.auth.dto.AuthorizationResponse;
+import com.ject.oogachaka.auth.dto.OAuthState;
 import com.ject.oogachaka.auth.dto.SocialLoginRequest;
 import com.ject.oogachaka.auth.dto.SocialLoginResponse;
 import com.ject.oogachaka.auth.enums.AuthProvider;

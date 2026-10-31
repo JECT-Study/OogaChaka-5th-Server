@@ -27,6 +27,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JsonSecurityHandler errorHandler;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // 공개 인증 API는 access가 만료된 클라이언트의 공통 헤더도 무시한다.
+        return AuthRequestMatchers.PUBLIC_ENDPOINTS.matches(request);
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
