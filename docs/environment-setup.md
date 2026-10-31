@@ -49,7 +49,7 @@ Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 �
 | `AES_ENCRYPTION_KEY` | Base64로 인코딩한 무작위 32바이트 AES v1 키 | 모든 애플리케이션 시작 |
 | `HMAC_SOCIAL_ID_KEY` | Base64 32바이트 소셜 ID 조회 키 | 모든 애플리케이션 시작 |
 | `HMAC_DEVICE_TOKEN_KEY` | Base64 32바이트 디바이스 토큰 중복 검사 키 | 모든 애플리케이션 시작 |
-| `JWT_SECRET` | 별도 Base64 서명 키. 후속 jjwt 구현에서 검증하며 HS256 이상에 맞는 충분한 길이를 사용한다. | 인증 브랜치 |
+| `JWT_SECRET` | 독립된 Base64 서명 키. HS256용 최소 32바이트를 시작 시 검증한다. | 인증 브랜치 |
 | `AES_ACTIVE_VERSION` | 기본 `v1`. 교체 시 새 버전과 키 맵을 함께 설정한다. | 키 교체 |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DATABASE` | 기본 `localhost`, `6379`, `0` | 인증 브랜치 |
 | `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_SSL_ENABLED` | 기본 빈 값/빈 값/`false`. 비밀번호는 `ENC(...)`로 주입한다. | 인증 Redis에 필요할 때 |
@@ -324,14 +324,16 @@ WHERE TABLE_SCHEMA = DATABASE()
 `JasyptEncryptorFactory`를 CLI와 `jasyptStringEncryptor` 빈이 공유한다. 알고리즘 설정은 이
 팩토리에 고정되어 있다. 기존 다른 규격의 암호문은 이 도구로 다시 암호화한다.
 
-## 후속 브랜치 설정 계약
+## 인증 및 후속 푸시 설정 계약
 
-현재 브랜치는 Redis/jjwt/Firebase 의존성과 실제 인증·푸시 실행기를 추가하지 않는다.
-후속 구현은 `application.properties`의 키를 그대로 `@ConfigurationProperties`로 바인딩한다.
-인증 브랜치는 `JWT_SECRET` 누락·빈 값·Base64 오류·선택한 서명 알고리즘의 최소 키 길이 미달을
-애플리케이션 시작 시 거부해야 한다. HS256은 디코딩 후 최소 32바이트이며, 다른 알고리즘은 해당
-최소 길이를 적용한다. 이 브랜치는 설정 골격만 제공하며 JWT 검증 구현은 인증 브랜치의 책임이다.
-최소 키 길이 기준은 [JWA의 HMAC 규격](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2)을 따른다.
+인증 구현은 Redis/jjwt 의존성과 `app.jwt`/`app.oauth`/`app.cors` 바인딩을 제공한다.
+JWT_SECRET 누락·빈 값·Base64 오류·디코딩 후 32바이트 미만 키는 시작 시 거부한다.
+서명 알고리즘은 HS256으로 고정하며 최소 키 길이 기준은
+[JWA의 HMAC 규격](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2)을 따른다.
+Redis는 GETDEL을 지원하는 6.2 이상이어야 한다. 활성 OAuth 제공자는 필수 client ID/secret,
+절대 redirect URI 및 HTTPS 외부 API 주소를 시작 시 검사한다(카카오 secret은 선택).
+구글·카카오 S256 PKCE, 인증 응답 계약, Redis 키/운영 조건 및 제공자별 콘솔 설정은
+[인증 API 가이드](auth-api.md)를 참고한다. Firebase 및 푸시 실행기는 후속 푸시 구현 범위다.
 
 | 설정 접두어 | 계약 |
 | --- | --- |

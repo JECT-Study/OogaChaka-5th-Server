@@ -1,0 +1,114 @@
+package com.ject.oogachaka.auth.security;
+
+import static com.ject.oogachaka.global.crypto.TestCryptoKeys.dummyKey;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.ject.oogachaka.auth.enums.TokenType;
+import com.ject.oogachaka.auth.repository.AuthTokenStore;
+import com.ject.oogachaka.auth.token.JwtTokenProvider;
+import com.ject.oogachaka.auth.token.TokenPair;
+import com.ject.oogachaka.global.config.JwtProperties;
+import com.ject.oogachaka.global.exception.BusinessException;
+import com.ject.oogachaka.global.response.code.ErrorCode;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.json.JsonMapper;
+
+class JwtAuthenticationFilterTest {
+
+    private final JwtProperties properties = new JwtProperties(dummyKey(4), Duration.ofMinutes(30), Duration.ofDays(14), "oogachaka");
+    private final Clock clock = Clock.fixed(Instant.parse("2026-11-01T00:00:00Z"), ZoneOffset.UTC);
+    private final JwtTokenProvider jwt = new JwtTokenProvider(properties, clock);
+    private final AuthTokenStore store = mock(AuthTokenStore.class);
+    private final JsonSecurityHandler handler = new JsonSecurityHandler(JsonMapper.builder().build());
+    private final JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwt, store, handler);
+
+    @AfterEach
+    void clearContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void authenticatedPrincipalIsLongUserIdAndClaimsAreAvailable() throws Exception {
+        TokenPair pair = jwt.issuePair(42L);
+        MockHttpServletRequest request = request(pair.access().value());
+        AtomicBoolean called = new AtomicBoolean();
+        filter.doFilter(request, new MockHttpServletResponse(), (incoming, outgoing) -> {
+            assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo(42L).isInstanceOf(Long.class);
+            assertThat(request.getAttribute(JwtAuthenticationFilter.ACCESS_CLAIMS_ATTRIBUTE)).isEqualTo(pair.access().claims());
+            called.set(true);
+        });
+        assertThat(called).isTrue();
+    }
+
+    @Test
+    void blacklistPreventsReusingLoggedOutAccess() throws Exception {
+        TokenPair pair = jwt.issuePair(42L);
+        when(store.isBlacklisted(pair.access().claims())).thenReturn(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request(pair.access().value()), response, (incoming, outgoing) -> {
+            throw new AssertionError("블랙리스트 토큰이 체인을 통과했습니다.");
+        });
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("AUTH_TOKEN_REVOKED", "\"data\":null");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void expiryAndTamperingReturnDifferentJsonCodes() throws Exception {
+        JwtTokenProvider old = new JwtTokenProvider(properties, Clock.offset(clock, Duration.ofHours(-1)));
+        assertFailure(old.issuePair(42L).access().value(), "AUTH_TOKEN_EXPIRED");
+        assertFailure("broken-token", "AUTH_TOKEN_INVALID");
+        assertFailure(jwt.issuePair(42L).refresh().value(), "AUTH_TOKEN_INVALID");
+    }
+
+    @Test
+    void redisFailureDoesNotAuthenticate() throws Exception {
+        TokenPair pair = jwt.issuePair(42L);
+        when(store.isBlacklisted(pair.access().claims())).thenThrow(new BusinessException(ErrorCode.AUTH_STORE_UNAVAILABLE));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request(pair.access().value()), response, (incoming, outgoing) -> {
+            throw new AssertionError("Redis 장애 시 인증을 허용했습니다.");
+        });
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(response.getContentAsString()).contains("AUTH_STORE_UNAVAILABLE");
+    }
+
+    @Test
+    void entryPointAndDeniedHandlerUseApiResponseJson() throws Exception {
+        MockHttpServletResponse unauthorized = new MockHttpServletResponse();
+        handler.commence(new MockHttpServletRequest(), unauthorized, null);
+        assertThat(unauthorized.getStatus()).isEqualTo(401);
+        assertThat(unauthorized.getContentAsString()).contains("\"code\":\"UNAUTHORIZED\"", "\"data\":null");
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        handler.handle(new MockHttpServletRequest(), denied, null);
+        assertThat(denied.getStatus()).isEqualTo(403);
+        assertThat(denied.getContentAsString()).contains("\"code\":\"FORBIDDEN\"", "\"data\":null");
+    }
+
+    private void assertFailure(String token, String code) throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request(token), response, (incoming, outgoing) -> {
+            throw new AssertionError("유효하지 않은 토큰이 체인을 통과했습니다.");
+        });
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentType()).startsWith("application/json");
+        assertThat(response.getContentAsString()).contains(code).doesNotContain(token);
+    }
+
+    private MockHttpServletRequest request(String token) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/logout");
+        request.addHeader("Authorization", "Bearer " + token);
+        return request;
+    }
+}
