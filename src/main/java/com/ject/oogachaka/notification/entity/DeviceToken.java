@@ -11,6 +11,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
@@ -24,8 +25,9 @@ import org.hibernate.type.SqlTypes;
 /** 디바이스별 푸시 수신 등록. 토큰 원문은 응답이나 문자열 표현에 노출하지 않는다. */
 @Getter
 @Entity
-@Table(name = "device_token", uniqueConstraints =
-    @UniqueConstraint(name = "uk_device_token_token_hash", columnNames = "token_hash"))
+@Table(name = "device_token",
+    indexes = @Index(name = "idx_device_token_user", columnList = "user_id"),
+    uniqueConstraints = @UniqueConstraint(name = "uk_device_token_token_hash", columnNames = "token_hash"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeviceToken extends BaseTimeEntity {
 

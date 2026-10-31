@@ -3,10 +3,7 @@ package com.ject.oogachaka.global.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
 
-import com.ject.oogachaka.notification.service.PushSender;
-import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -17,7 +14,7 @@ class PushAsyncConfigTest {
     @Test
     void saturatedExecutorDoesNotRunPushWorkOnThePublisherThreadOrThrow() throws Exception {
         var properties = new PushAsyncProperties(1, 1, 0, "test-push-", Duration.ofSeconds(2));
-        var executor = new PushAsyncConfig().pushExecutor(properties, mock(PushSender.class), mock(EntityManagerFactory.class));
+        var executor = new PushAsyncConfig().pushExecutor(properties);
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         executor.initialize();

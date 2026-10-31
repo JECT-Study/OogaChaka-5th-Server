@@ -9,12 +9,13 @@ package com.ject.oogachaka.mission.event;
  * mission.getId(), childUserId, mission.getTitle()))}를 호출한다.
  * 트랜잭션 밖에서 발행하거나 롤백하면 푸시 리스너가 실행되지 않는다.
  * 미션 엔티티나 개인정보 대신 발행 시점의 미션 제목과 식별자만 전달한다.
+ * 푸시 표시용 제목 길이와 공백 처리는 커밋 후 알림 생성 시점에 적용한다.
  */
 public record MissionCompletionRequestedEvent(Long missionId, Long childUserId, String missionTitle) {
 
     public MissionCompletionRequestedEvent {
         if (missionId == null || missionId <= 0 || childUserId == null || childUserId <= 0
-            || missionTitle == null || missionTitle.isBlank() || missionTitle.length() > 64) {
+            || missionTitle == null) {
             throw new IllegalArgumentException("미션 완료 인증 요청 이벤트의 필수 값이 올바르지 않습니다.");
         }
     }

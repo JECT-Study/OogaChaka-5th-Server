@@ -42,6 +42,41 @@ Content-Type: application/json
 토큰 갱신으로 값이 바뀌면 이전 토큰을 기억하고 있을 때 DELETE 후 새 값으로 PUT한다.
 이전 값을 모르면 새 값만 등록할 수 있으며, 이전 토큰은 FCM이 무효하다고 응답한 시점에 정리된다.
 
+### 필수 로그아웃 순서와 실패 처리
+
+클라이언트의 로그아웃 처리에는 다음 순서를 필수로 적용한다. 인증 브랜치의 로그아웃은 access token을
+블랙리스트에 넣으므로 인증 로그아웃 뒤에는 같은 access token으로 기기 등록을 해제할 수 없다.
+
+1. 로그아웃을 시작하면 토큰 갱신/앱 시작 등의 자동 PUT을 중단하고 이미 진행 중인 PUT이 끝나도록
+   정리한다. 뒤늦은 PUT이 등록 해제 후 같은 기기를 다시 등록하지 않게 한다.
+2. 현재 로그인 사용자의 유효한 access token과 현재 기기의 FCM 토큰으로 DELETE를 보내고
+   HTTP 200을 확인한다. access가 만료되었고 refresh가 유효하면 먼저 인증 갱신 후 DELETE를 재시도한다.
+3. 타임아웃/통신 오류 시 같은 DELETE를 재시도한다. 응답만 유실되어 서버에서 이미 삭제했어도
+   재호출은 성공한다. 해제가 확인되기 전에는 서버 푸시 해제 완료로 표시하지 않는다.
+   강제 종료/오프라인/갱신 불가 상태에서 로컬 정보만 지우면 서버 등록이 남을 수 있다.
+4. DELETE 성공 후 `POST /api/v1/auth/logout`을 호출하고 인증 로그아웃 성공 뒤에 로컬 access/refresh와
+   사용자 정보를 지운다. 등록 해제 후 인증 로그아웃이 실패하면 해제 상태를 유지하고 인증 로그아웃을
+   재시도한다. 사용자가 다시 로그인 상태를 유지하기로 하면 PUT으로 수신 등록을 복구한다.
+5. 다음 로그인에서 새 인증 사용자로 PUT하고 자동 동기화를 재개한다.
+
+이 순서는 클라이언트 연동 계약이며 이번 백엔드 브랜치가 클라이언트 동작을 구현하지는 않는다.
+인증 로그아웃만 호출하거나 DELETE 실패 후 로컬 로그아웃을 완료하면 서버 등록은 자동으로 해제되지
+않는다. 강제 종료/오프라인까지 포함한 서버 자동 해제를 보장하지 않으며, 등록이 남아 있으면
+자녀 닉네임/미션 제목이 기기에 표시될 수 있다.
+
+②와 통합할 후속 항목은 인증 로그아웃 요청의 선택적 `fcmToken`과 현재 사용자 소유 등록 해제를
+한 서비스 흐름으로 연결하는 것이다. 이 브랜치에서는 ②의 DTO/Redis 로그아웃 계약과 다중 기기 정책을
+유지한다. 현재 인증 세션과 device_token의 기기 연결 정보가 없어 특정 기기를 추정해 삭제하거나
+사용자의 모든 기기를 해제하지 않는다. 서버 연동을 추가해도 서버에 도착하지 않은 오프라인 요청까지
+자동 처리하는 것은 별도 설계가 필요하다.
+
+통합 검증에는 DELETE 성공 → 인증 로그아웃의 호출 순서, 응답 유실 후 DELETE 재시도,
+DELETE 실패/401에서의 완료 표시 방지, 로그아웃 중 PUT 중단, 다른 기기의 등록 유지,
+계정 전환 전 세션의 DELETE가 새 소유자에게 영향 주지 않는지를 포함한다.
+Capacitor 네이티브 HTTP/웹 fetch와 실제 프록시·게이트웨이 조합에서 DELETE JSON 본문이
+서버까지 유지되는지도 확인한다. 본문 지원 문제가 재현되면 인증된 POST 해제 API를 별도로 검토하며,
+토큰을 URL로 보내지는 않는다.
+
 ## 5-44 미션 완료 인증 제출 서비스 연결
 
 미션 도메인 구현 시 `POST /api/v1/missions/{id}/completion-requests`의 쓰기 트랜잭션에서
@@ -67,6 +102,9 @@ public void requestCompletion(Long missionId, Long childUserId) {
 `ParentPushRecipientPort`를 향후 가족 도메인의 조회 서비스로 교체할 수 있다.
 
 표시 제목은 `미션 완료 인증 요청`, 본문은 `{자녀 닉네임}님이 '{미션 제목}' 완료 인증을 요청했어요`다.
+제목 표시 규칙은 이벤트 발행 트랜잭션에 두지 않는다. 커밋 후 알림 생성 시 미션 제목을 Unicode
+code point 기준 최대 64자(생략 기호 포함)로 제한하고, 공백뿐인 제목은 `미션`으로 표시한다.
+이벤트의 원래 제목은 그대로 유지하며 제목 길이 변경 때문에 미션 저장을 롤백시키지 않는다.
 `data`의 값은 모두 문자열이다.
 
 ```json
@@ -95,10 +133,25 @@ Android HIGH priority, APNs alert/priority 10/default sound와 공통 notificati
 path와 json을 동시에 지정하면 활성화 시 시작에 실패한다. 비활성화 상태는 자격증명을 읽지 않는다.
 연결 제한은 3초, 읽기/쓰기 제한은 각각 10초다. `oogachaka-push` 이름의 FirebaseApp을 생성하며
 컨텍스트 종료 시 delete한다. [Firebase Admin 설정](https://firebase.google.com/docs/admin/setup)을 따른다.
+초기화 실패 메시지에는 `원인 유형=NoSuchFileException`처럼 예외 클래스명만 덧붙인다.
+파일 경로·JSON·개인키가 들어갈 수 있는 원래 메시지와 cause는 전달하지 않는다.
 
 `app.async.push.*`는 기존 계약을 그대로 사용한다: core=2/max=4/queue=100, thread-name-prefix=push-,
-await-termination=30s. 실행기 포화/종료 시에는 경고를 남기고 작업을 생략한다. 실행기 종료는
-Firebase/JPA 종료보다 먼저 수행하며 설정된 시간까지 대기한다.
+await-termination=30s. 실행기 포화/종료 시에는 경고를 남기고 작업을 생략한다.
+`@DependsOn({"pushSender", "entityManagerFactory"})`로 실행기를 Firebase/JPA보다 먼저 종료하고
+설정된 시간까지 대기하도록 구성한다.
+
+## 수신자 조회 인덱스
+
+`V4__add_device_token_user_index.sql`은 `device_token(user_id)`에 비고유 인덱스
+`idx_device_token_user`를 추가한다. 사용자 ID 목록으로 기기를 찾을 때 사용할 수 있고,
+기존 `token_hash` UNIQUE와 사용자당 여러 기기 정책은 유지한다. V1/V2는 수정하지 않는다.
+현재 작업에서는 V4를 작성만 했으며 실행하지 않았다. 병합 후 배포 전 실제 인덱스·데이터 규모와
+실행 계획을 확인한다. 인덱스 추가만으로 모든 데이터 분포에서 같은 실행 계획을 보장하지는 않는다.
+
+`family_member.family_id` 인덱스도 V1/V2에 없다. 해당 가족 조인의 인덱스는 가족 도메인의
+후속 스키마 작업으로 남기며 이 브랜치에서 다른 도메인 테이블을 변경하지 않는다.
+가족 도메인 작업 시 `family_id` 또는 `(family_id, family_role)` 인덱스를 실행 계획과 함께 검토한다.
 
 ## 전송 실패 처리와 보장 범위
 
@@ -135,7 +188,8 @@ Firebase의 [오류 코드 문서](https://firebase.google.com/docs/cloud-messag
    [Capacitor Token 계약](https://capacitorjs.com/docs/apis/push-notifications#token)과
    [Firebase iOS Messaging API](https://firebase.google.com/docs/reference/swift/firebasemessaging/api/reference/Classes/Messaging)를 확인한다.
 5. 알림 권한을 받은 후 등록 리스너/토큰 갱신 리스너를 연결하고 로그인 직후·앱 시작·토큰 갱신마다
-   인증된 PUT을 보낸다. 로그아웃에서는 서버 DELETE 성공 후 인증 로그아웃/로컬 토큰 폐기를 진행한다.
+   인증된 PUT을 보낸다. 로그아웃은 위 필수 순서와 실패 처리를 적용하고, 실제 배포 경로의 DELETE
+   본문 전달을 확인한다. 서버 자동 해제 연동은 ②와의 후속 항목이다.
 6. foreground 표시 옵션과 수신 핸들러를 구현하고, 탭 이벤트에서 data.type/missionId로 화면을 연다.
    [Capacitor 표시·수신 API](https://capacitorjs.com/docs/apis/push-notifications)를 따른다.
 7. WEB은 native Capacitor 플러그인 외에 Firebase Web Messaging service worker/권한/VAPID 설정이

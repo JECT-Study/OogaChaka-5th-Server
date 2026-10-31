@@ -28,7 +28,7 @@ class MissionCompletionPushTransactionTest {
     private final MissionCompletionRequestedEvent event = new MissionCompletionRequestedEvent(10L, 3L, "책 읽기");
 
     @Test
-    void committedEventRunsAfterCommitOnTheDedicatedExecutor() throws Exception {
+    void committedEventWithLongTitleRunsAfterCommitOnTheDedicatedExecutor() throws Exception {
         try (var context = new AnnotationConfigApplicationContext(TestConfig.class)) {
             var port = context.getBean(ParentPushRecipientPort.class);
             var manager = context.getBean(TestTransactionManager.class);
@@ -44,7 +44,7 @@ class MissionCompletionPushTransactionTest {
             });
 
             new TransactionTemplate(manager).executeWithoutResult(status -> {
-                context.publishEvent(event);
+                context.publishEvent(new MissionCompletionRequestedEvent(10L, 3L, "가".repeat(100)));
                 verifyNoInteractions(port);
             });
 

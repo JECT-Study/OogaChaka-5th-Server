@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.google.firebase.FirebaseApp;
 import com.ject.oogachaka.notification.infrastructure.NoOpPushSender;
 import com.ject.oogachaka.notification.service.PushSender;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 class FcmConfigTest {
@@ -39,9 +41,23 @@ class FcmConfigTest {
         runner.withPropertyValues("app.fcm.enabled=true", "app.fcm.service-account-json=TEST_ONLY_INVALID_JSON")
             .run(context -> {
                 assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure()).hasRootCauseMessage(
-                    "FCM 초기화에 실패했습니다. 프로젝트와 자격증명 설정을 확인해 주세요.");
-                assertThat(context.getStartupFailure().getCause().getMessage()).doesNotContain("TEST_ONLY_INVALID_JSON");
+                assertThat(context.getStartupFailure()).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageMatching("FCM 초기화에 실패했습니다\\. 프로젝트와 자격증명 설정을 확인해 주세요\\. "
+                        + "원인 유형=[A-Za-z][A-Za-z0-9]*")
+                    .hasMessageNotContaining("TEST_ONLY_INVALID_JSON").hasNoCause();
+            });
+    }
+
+    @Test
+    void missingCredentialFileReportsOnlyTheExceptionType(@TempDir Path directory) {
+        String secretPath = directory.resolve("TEST_ONLY_PRIVATE_CREDENTIAL_PATH.json").toString();
+        runner.withPropertyValues("app.fcm.enabled=true", "app.fcm.service-account-path=" + secretPath)
+            .run(context -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).rootCause()
+                    .hasMessageEndingWith("원인 유형=NoSuchFileException")
+                    .hasMessageNotContaining(secretPath).hasNoCause();
             });
     }
 }

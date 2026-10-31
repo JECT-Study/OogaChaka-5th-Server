@@ -41,7 +41,8 @@ public class FcmConfig {
             return FirebaseApp.initializeApp(options.build(), "oogachaka-push");
         } catch (IOException | RuntimeException exception) {
             // 자격증명 경로나 JSON/개인키가 들어갈 수 있는 공급자 예외의 메시지/cause를 노출하지 않는다.
-            throw new IllegalStateException("FCM 초기화에 실패했습니다. 프로젝트와 자격증명 설정을 확인해 주세요.");
+            throw new IllegalStateException("FCM 초기화에 실패했습니다. 프로젝트와 자격증명 설정을 확인해 주세요. 원인 유형="
+                + exception.getClass().getSimpleName());
         }
     }
 

@@ -1,11 +1,10 @@
 package com.ject.oogachaka.global.config;
 
-import com.ject.oogachaka.notification.service.PushSender;
-import jakarta.persistence.EntityManagerFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -16,8 +15,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 public class PushAsyncConfig {
 
     @Bean("pushExecutor")
-    public ThreadPoolTaskExecutor pushExecutor(PushAsyncProperties properties,
-        PushSender pushSender, EntityManagerFactory entityManagerFactory) {
+    @DependsOn({"pushSender", "entityManagerFactory"})
+    public ThreadPoolTaskExecutor pushExecutor(PushAsyncProperties properties) {
         // 의존성을 명시하여 종료 시 Firebase/JPA보다 먼저 푸시 작업을 정리한다.
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(properties.corePoolSize());

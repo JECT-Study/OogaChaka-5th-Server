@@ -121,6 +121,25 @@ class FamilyParentPushRecipientQueryTest {
     }
 
     @Test
+    void deviceOwnerLookupIndexIsNonUniqueAndTokenHashUniquenessIsPreserved() {
+        var index = jdbc.queryForMap("""
+            SELECT COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_token'
+                AND INDEX_NAME = 'idx_device_token_user'
+            """);
+
+        assertThat(index.get("COLUMN_NAME")).isEqualTo("user_id");
+        assertThat(((Number) index.get("NON_UNIQUE")).intValue()).isEqualTo(1);
+        assertThat(((Number) index.get("SEQ_IN_INDEX")).intValue()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+            SELECT NON_UNIQUE FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device_token'
+                AND INDEX_NAME = 'uk_device_token_token_hash' AND COLUMN_NAME = 'token_hash'
+            """, Integer.class)).isZero();
+    }
+
+    @Test
     void upsertMovesOwnershipAndPreservesGlobalUniqueness() {
         String token = "dummy-child";
         String hash = hmacService.hash(token, HmacPurpose.DEVICE_TOKEN);
