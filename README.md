@@ -22,3 +22,5 @@ docker compose down -v    # 데이터까지 삭제하고 초기화
 
 접속 정보와 `application-local.properties` 설정은 [환경 설정 가이드](docs/environment-setup.md)의 2단계를 참고하세요.
 소셜 로그인·JWT 갱신/로그아웃과 제공자 콘솔 준비는 [인증 API 가이드](docs/auth-api.md)를 참고하세요.
+
+디바이스 등록 API, 미션 이벤트 연결과 Firebase·Capacitor 준비는 [푸시 알림 가이드](docs/push-notifications.md)를 참고하세요.

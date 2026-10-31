@@ -29,7 +29,10 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "존재하지 않는 사용자입니다."),
     DUPLICATE_USER(HttpStatus.CONFLICT, "DUPLICATE_USER", "중복된 사용자입니다."),
 
-    INVALID_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_SCHEDULE_TIME", "올바르지 않은 일정 시간입니다.");
+    INVALID_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_SCHEDULE_TIME", "올바르지 않은 일정 시간입니다."),
+
+    // 알림
+    PUSH_REGISTRATION_CONFLICT(HttpStatus.CONFLICT, "PUSH_REGISTRATION_CONFLICT", "푸시 등록이 충돌했습니다. 다시 시도해 주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;
