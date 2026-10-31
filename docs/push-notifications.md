@@ -143,10 +143,10 @@ await-termination=30s. 실행기 포화/종료 시에는 경고를 남기고 작
 
 ## 수신자 조회 인덱스
 
-`V4__add_device_token_user_index.sql`은 `device_token(user_id)`에 비고유 인덱스
+`V3__add_device_token_user_index.sql`은 `device_token(user_id)`에 비고유 인덱스
 `idx_device_token_user`를 추가한다. 사용자 ID 목록으로 기기를 찾을 때 사용할 수 있고,
 기존 `token_hash` UNIQUE와 사용자당 여러 기기 정책은 유지한다. V1/V2는 수정하지 않는다.
-현재 작업에서는 V4를 작성만 했으며 실행하지 않았다. 병합 후 배포 전 실제 인덱스·데이터 규모와
+현재 작업에서는 V3를 작성만 했으며 실행하지 않았다. 병합 후 배포 전 실제 인덱스·데이터 규모와
 실행 계획을 확인한다. 인덱스 추가만으로 모든 데이터 분포에서 같은 실행 계획을 보장하지는 않는다.
 
 `family_member.family_id` 인덱스도 V1/V2에 없다. 해당 가족 조인의 인덱스는 가족 도메인의
