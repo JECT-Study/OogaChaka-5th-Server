@@ -11,7 +11,7 @@ import org.testcontainers.mysql.MySQLContainer;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 class OogachakaApplicationTests {
 
     @Container

@@ -31,7 +31,7 @@ import org.testcontainers.mysql.MySQLContainer;
 import testsupport.crypto.CryptoTestValue;
 
 /** 실제 DB 대신 Docker의 일회용 MySQL에서만 마이그레이션과 Converter를 검증한다. */
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 class CryptoPersistenceTest {
 
     @Container
@@ -126,6 +126,30 @@ class CryptoPersistenceTest {
             assertThat(metadata.get("CHARACTER_SET_NAME")).isEqualTo("ascii");
             assertThat(metadata.get("COLLATION_NAME")).isEqualTo("ascii_bin");
             assertThat(metadata.get("IS_NULLABLE")).isEqualTo("NO");
+        }
+    }
+
+    @Test
+    void charHashMappingsValidateAgainstV2AndSupportJpaLookup() {
+        HmacService service = context.getBean(HmacService.class);
+        String socialHash = service.hash("dummy-social-user", HmacPurpose.SOCIAL_ID);
+        String tokenHash = service.hash("dummy-fcm-token", HmacPurpose.DEVICE_TOKEN);
+        insertSocialAccount(1L, "GOOGLE", socialHash);
+        jdbc.update("INSERT INTO device_token (user_id, token, token_hash, device_platform, last_synced_at, "
+            + "created_at, updated_at) VALUES (?, ?, ?, 'ANDROID', NOW(6), NOW(6), NOW(6))",
+            1L, context.getBean(EncryptionService.class).encrypt("dummy-fcm-token"), tokenHash);
+
+        // 컨텍스트 생성 시 두 실제 테이블의 CHAR 필드도 hbm2ddl.auto=validate 대상이다.
+        var entityManager = context.getBean(EntityManagerFactory.class).createEntityManager();
+        try {
+            assertThat(entityManager.createQuery("SELECT account.providerUserIdHash FROM CryptoTestSocialAccount account "
+                + "WHERE account.providerUserIdHash = :hash", String.class)
+                .setParameter("hash", socialHash).getSingleResult()).isEqualTo(socialHash);
+            assertThat(entityManager.createQuery("SELECT device.tokenHash FROM CryptoTestDeviceToken device "
+                + "WHERE device.tokenHash = :hash", String.class)
+                .setParameter("hash", tokenHash).getSingleResult()).isEqualTo(tokenHash);
+        } finally {
+            entityManager.close();
         }
     }
 

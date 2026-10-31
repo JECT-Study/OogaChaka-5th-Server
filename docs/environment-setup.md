@@ -102,6 +102,60 @@ NOT NULL/UNIQUE 추가가 실패할 수 있으므로 적용 전에 별도 백필
 소셜 기존 값도 현재 HMAC 키의 소문자 hex 64자리인지 확인한다. 마이그레이션은 자동으로
 평문을 HMAC으로 변환하지 않는다. 미병합 SQL을 공용 DB에 적용하지 않는다.
 
+### V2 적용 전 점검
+
+공용 DB는 **아래 점검과 스키마 대조를 마친 뒤에만** 병합된 V2를 적용한다. 점검 전에는
+그 DB를 대상으로 앱을 시작하지 않는다. `baseline-on-migrate=true`는 기존 스키마가 V1과
+같은지 검증하지 않으며, V1로 baseline한 다음 V2를 실제 실행한다.
+현재 공용 DB의 스키마·데이터·sql_mode는 이 작업에서 확인하지 않았다.
+
+다음은 MySQL 8용 읽기 전용 점검 SQL이다. 대상 DB를 선택하고 Flyway 연결과 동일한 접속 설정의
+세션에서 확인한다. 원문 ID나 토큰은 조회하지 않는다.
+
+```sql
+SELECT DATABASE() AS target_database,
+       @@SESSION.sql_mode AS session_sql_mode,
+       @@GLOBAL.sql_mode AS global_sql_mode;
+
+SHOW CREATE TABLE social_account;
+SHOW CREATE TABLE device_token;
+SHOW INDEX FROM social_account;
+SHOW INDEX FROM device_token;
+
+SELECT MAX(CHAR_LENGTH(provider_user_id_hash)) AS max_hash_length,
+       COUNT(*) AS social_account_rows,
+       COALESCE(SUM(provider_user_id_hash IS NULL
+           OR CHAR_LENGTH(provider_user_id_hash) <> 64), 0) AS invalid_length_rows,
+       COALESCE(SUM(NOT REGEXP_LIKE(provider_user_id_hash, '^[0-9a-f]{64}$', 'c')), 0)
+           AS invalid_hex_rows
+FROM social_account;
+
+SELECT COUNT(*) AS device_token_rows FROM device_token;
+
+SELECT COUNT(*) AS token_hash_column_count
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'device_token'
+  AND COLUMN_NAME = 'token_hash';
+```
+
+- `SHOW CREATE TABLE`과 인덱스를 V1·V2 SQL과 대조한다. 테이블·컬럼·제약이 예상과 다르거나
+  `token_hash_column_count`가 0이 아니면 그대로 적용하지 않는다.
+- `max_hash_length`가 64를 넘거나 길이·hex 형식이 잘못된 행이 있으면 적용을 중단한다.
+  형식만으로 현재 HMAC 키로 생성된 값인지는 알 수 없으므로 생성 경로와 키 운영도 확인한다.
+- 현재 V2는 `device_token_rows=0`을 전제로 한다. 기존 행이 있으면 단계별 컬럼 추가·백필·중복
+  정리·NOT NULL/UNIQUE 적용 절차를 별도로 준비한다.
+- Flyway가 실행하는 세션의 sql_mode에 `STRICT_TRANS_TABLES` 또는 `STRICT_ALL_TABLES`가
+  포함되는지 확인한다. global 값만으로 실제 실행 세션을 보장할 수 없다. non-strict에서 컬럼을
+  줄이면 값이 잘릴 수 있고, 문자 집합 변경도 변환에 따른 데이터 손실을 일으킬 수 있다.
+  strict에서도 끝 공백 등의 처리에 의존하지 않고 원래 데이터의 길이·문자 종류부터 점검한다.
+
+점검이 실패하면 앱을 재시작하며 시도하지 않고 DB 관리자와 데이터 전환 절차를 준비한다.
+적용된 마이그레이션을 수정하거나 schema history만 맞추는 방식으로 우회하지 않는다.
+위 SQL은 절차를 문서화한 것으로, 이번 작업에서는 실행하지 않았다.
+참고: [MySQL SQL mode](https://dev.mysql.com/doc/refman/8.4/en/sql-mode.html),
+[컬럼 문자 집합 변경](https://dev.mysql.com/doc/refman/8.4/en/charset-column.html).
+
 IntelliJ에서는 `Run > Edit Configurations > OogachakaApplication`의 JRE를 Java 17로,
 Active profiles를 `local`로 지정한다. `Environment variables` 편집 창에 필수 변수들을 추가한다.
 Gradle 실행 구성도 동일하게 환경변수를 넣고 Gradle JVM을 Java 17로 지정한다.
@@ -111,6 +165,10 @@ Gradle 실행 구성도 동일하게 환경변수를 넣고 Gradle JVM을 Java 1
 
 현재 브랜치는 Redis/jjwt/Firebase 의존성과 실제 인증·푸시 실행기를 추가하지 않는다.
 후속 구현은 `application.properties`의 키를 그대로 `@ConfigurationProperties`로 바인딩한다.
+인증 브랜치는 `JWT_SECRET` 누락·빈 값·Base64 오류·선택한 서명 알고리즘의 최소 키 길이 미달을
+애플리케이션 시작 시 거부해야 한다. HS256은 디코딩 후 최소 32바이트이며, 다른 알고리즘은 해당
+최소 길이를 적용한다. 이 브랜치는 설정 골격만 제공하며 JWT 검증 구현은 인증 브랜치의 책임이다.
+최소 키 길이 기준은 [JWA의 HMAC 규격](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2)을 따른다.
 
 | 설정 접두어 | 계약 |
 | --- | --- |
@@ -140,6 +198,32 @@ null은 HMAC 오류다. 조회/저장에 같은 규칙을 적용하고 이미 �
 소셜 조회는 제공자와 해시를 함께 사용한다. 디바이스 토큰 원문은 엔티티 필드에 명시적으로
 `@Convert(converter = EncryptionConverter.class)`를 적용하고 Service에서 중복 암호화하지 않는다.
 `CryptoConfig`가 Hibernate 7의 `SpringBeanContainer`를 연결하여 Converter의 생성자 주입을 지원한다.
+
+두 해시 필드는 `@Column(length = 64)`만 사용하지 않고 JDBC 타입을 명시한다.
+후속 인증/푸시 엔티티는 다음 매핑을 사용한다. 문자 집합과 collation은 Flyway V2가 관리하며,
+HMAC은 AttributeConverter를 적용하지 않는다.
+[Hibernate의 JdbcTypeCode](https://docs.hibernate.org/orm/7.4/javadocs/org/hibernate/annotations/JdbcTypeCode.html)로
+JDBC 타입을 지정하며, 실제 조회까지 아래 통합 테스트 범위에 포함한다.
+
+```java
+import jakarta.persistence.Column;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+// SocialAccount
+@JdbcTypeCode(SqlTypes.CHAR)
+@Column(name = "provider_user_id_hash", nullable = false, length = 64)
+private String providerUserIdHash;
+
+// DeviceToken
+@JdbcTypeCode(SqlTypes.CHAR)
+@Column(name = "token_hash", nullable = false, length = 64)
+private String tokenHash;
+```
+
+`CryptoPersistenceTest`는 이 매핑의 테스트 전용 엔티티를 실제 `social_account`와 `device_token`에
+연결하여 V1/V2 적용 후 `hibernate.hbm2ddl.auto=validate`와 JPA 해시 조회를 검증하도록 작성했다.
+테스트를 실행하지 않았으므로 런타임 검증 통과 여부는 추후 Docker에서 확인해야 한다.
 
 AES 저장 규격은 `v1:Base64(IV + 암호문 + 태그)`이며 버전 UTF-8 바이트를 GCM AAD로 인증한다.
 원문이 N바이트라면 버전 길이 + 1 + `4 * ceil((12 + N + 16) / 3)` 바이트가 필요하다.
@@ -182,12 +266,16 @@ JDK 설정 예시는 [setup-java 공식 사용법](https://github.com/actions/se
 검증은 Java 17에서 `./gradlew compileJava compileTestJava`까지만 수행한다.
 단위 테스트에는 AES 왕복/IV/변조/잘못된 키/버전 교체/null 및 HMAC 결정성/키 분리/입력 규칙,
 설정 바인딩/시작 실패 조건을 작성했다. MySQL Testcontainers 통합 테스트에는 V1/V2,
-Converter 생성자 주입·저장/조회·TEXT 용량, 해시 조회·UNIQUE·ascii_bin 검증을 작성했다.
-통합 테스트는 공용 DB를 사용하지 않으며 Docker가 없으면 건너뛴다.
+Converter 생성자 주입·저장/조회·TEXT 용량, 실제 해시 컬럼의 CHAR 매핑 validate/JPA 조회,
+UNIQUE·ascii_bin 검증을 작성했다.
+통합 테스트와 `contextLoads`는 공용 DB를 사용하지 않으며 로컬/CI 모두 Docker가 필요하다.
+Docker가 없으면 테스트는 실패한다. Docker 부재를 이유로 자동으로 건너뛰지 않는다.
 
 추후 테스트 실행이 허용되면 Docker를 켜고 `JASYPT_ENCRYPTOR_PASSWORD`에 테스트 전용 더미
 비밀번호를 환경변수로 넣은 뒤 Gradle `test`를 실행한다. `contextLoads`는 test 프로필의 명시적
 더미 키와 Testcontainers DB를 사용한다. 본 작업에서는 테스트를 실행하지 않았다.
+추후 테스트 CI도 Docker에 접근 가능한 runner에서 전체 테스트를 실행하고, 테스트 클래스/태그를
+제외하여 통합 검증을 생략하지 않는다. 컴파일 전용 CI의 성공은 통합 테스트 통과를 의미하지 않는다.
 
 ## Jasypt 선택 근거
 
@@ -198,6 +286,8 @@ starter JAR에는 `META-INF/spring/org.springframework.boot.autoconfigure.AutoCo
 인터페이스를 호환 어댑터로 지원한다. 이동한 SystemEnvironment 후처리기의 순서 상수는
 바이트코드에 인라인되어 있었다. 별도 임시 코드로 Boot 4.1.2 컨텍스트에서 실제 `ENC(...)`
 복호화를 확인해 starter를 채택했다. 임시 코드는 저장소에 남기지 않았다.
+Boot 4.2 이상으로 올릴 때는 구 EnvironmentPostProcessor API의 제거 여부와 starter 최신 버전의
+등록 방식/실제 ENC 복호화를 다시 확인한다. 현재 검증 범위는 Boot 4.1.2와 starter 4.0.4다.
 
 근거: [Maven Central starter](https://central.sonatype.com/artifact/com.github.ulisesbocchio/jasypt-spring-boot-starter),
 [metadata](https://repo.maven.apache.org/maven2/com/github/ulisesbocchio/jasypt-spring-boot-starter/maven-metadata.xml),

@@ -3,6 +3,9 @@ package com.ject.oogachaka.global.exception;
 import com.ject.oogachaka.global.crypto.EncryptionException;
 import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.global.response.ApiResponse;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -49,6 +52,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         // 보안 예외는 Spring Security 필터에서 처리하도록 전달한다.
         if (exception instanceof AuthenticationException || exception instanceof AccessDeniedException) {
             throw exception;
+        }
+
+        // JPA 등의 래퍼에 담긴 암호화 오류도 같은 응답으로 처리하며 래퍼 메시지를 로그에 남기지 않는다.
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
+            if (cause instanceof EncryptionException encryptionException) {
+                return handleEncryptionException(encryptionException);
+            }
         }
 
         log.error("처리되지 않은 서버 오류가 발생했습니다.", exception);
