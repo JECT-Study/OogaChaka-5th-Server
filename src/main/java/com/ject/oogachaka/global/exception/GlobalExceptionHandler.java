@@ -1,5 +1,6 @@
 package com.ject.oogachaka.global.exception;
 
+import com.ject.oogachaka.global.crypto.EncryptionException;
 import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,14 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(EncryptionException.class)
+    public ResponseEntity<ApiResponse<Void>> handleEncryptionException(EncryptionException exception) {
+        log.error("암호화 처리 오류가 발생했습니다. operation={}", exception.getOperation());
+        ErrorCode errorCode = ErrorCode.CRYPTO_OPERATION_FAILED;
+        return ResponseEntity.status(errorCode.getHttpStatus())
+            .body(ApiResponse.error(errorCode));
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {

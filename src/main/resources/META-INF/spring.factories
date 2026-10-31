@@ -1,0 +1,2 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+com.ject.oogachaka.global.config.JasyptPasswordEnvironmentPostProcessor

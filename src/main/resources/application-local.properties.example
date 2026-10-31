@@ -1,0 +1,27 @@
+# 이 파일을 application-local.properties로 복사하고 아래 자리표시자를 교체한다.
+# 실제 키/비밀번호는 파일에 쓰지 않고 환경변수로 설정한다. docs/environment-setup.md 참고.
+# 반드시 로컬 DB 주소를 암호화한다. 공용 DB에 연결해 미병합 마이그레이션을 적용하지 않는다.
+spring.datasource.url=ENC(REPLACE_WITH_ENCRYPTED_LOCAL_DB_URL)
+spring.datasource.username=ENC(REPLACE_WITH_ENCRYPTED_LOCAL_DB_USERNAME)
+spring.datasource.password=ENC(REPLACE_WITH_ENCRYPTED_LOCAL_DB_PASSWORD)
+spring.data.redis.host=localhost
+spring.data.redis.port=6379
+app.cors.allowed-origins=http://localhost:5173,capacitor://localhost,http://localhost,https://localhost
+
+# 사용할 제공자만 활성화한다. secret은 ./gradlew jasyptEncrypt로 암호화한 값이다.
+app.oauth.providers.google.enabled=false
+app.oauth.providers.google.client-id=REPLACE_WITH_GOOGLE_CLIENT_ID
+app.oauth.providers.google.client-secret=ENC(REPLACE_WITH_ENCRYPTED_GOOGLE_CLIENT_SECRET)
+app.oauth.providers.google.redirect-uri=http://localhost:5173/auth/callback/google
+app.oauth.providers.kakao.enabled=false
+app.oauth.providers.kakao.client-id=REPLACE_WITH_KAKAO_REST_API_KEY
+app.oauth.providers.kakao.client-secret=ENC(REPLACE_WITH_ENCRYPTED_KAKAO_CLIENT_SECRET)
+app.oauth.providers.kakao.redirect-uri=http://localhost:5173/auth/callback/kakao
+app.oauth.providers.naver.enabled=false
+app.oauth.providers.naver.client-id=REPLACE_WITH_NAVER_CLIENT_ID
+app.oauth.providers.naver.client-secret=ENC(REPLACE_WITH_ENCRYPTED_NAVER_CLIENT_SECRET)
+app.oauth.providers.naver.redirect-uri=http://localhost:5173/auth/callback/naver
+
+app.fcm.enabled=false
+# 외부 서비스 계정 JSON 파일 경로 예시. 파일 자체는 저장소 밖에 보관한다.
+# app.fcm.service-account-path=/absolute/path/outside/repository/firebase-service-account.json
