@@ -10,7 +10,7 @@ public class JasyptConfig {
 
     @Bean("jasyptStringEncryptor")
     public StringEncryptor jasyptStringEncryptor(Environment environment) {
-        // 비밀번호 출처(환경변수/로컬 파일) 검증을 CLI와 같은 팩토리 규칙으로 처리한다.
+        // 빈 생성 시 비밀번호 누락과 공통 설정 파일에 비밀번호가 정의되었는지 검사한다.
         return JasyptEncryptorFactory.create(JasyptEncryptorFactory.requirePassword(environment));
     }
 }

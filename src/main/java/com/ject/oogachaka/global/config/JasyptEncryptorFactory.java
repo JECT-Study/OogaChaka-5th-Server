@@ -33,17 +33,18 @@ final class JasyptEncryptorFactory {
 
     /**
      * 서버·CI는 환경변수 JASYPT_ENCRYPTOR_PASSWORD, 로컬은 application-local.properties의
-     * jasypt.encryptor.password를 읽는다. 환경변수는 relaxed binding으로 같은 프로퍼티가 되고 우선한다.
+     * jasypt.encryptor.password를 Spring의 프로퍼티 우선순위에 따라 읽는다.
      */
     static String requirePassword(Environment environment) {
+        // 금지된 공통 파일의 값은 복호화를 시도하기 전에 거부한다.
+        if (environment instanceof ConfigurableEnvironment configurable && definedInCommittedConfig(configurable)) {
+            throw new IllegalStateException("Jasypt 비밀번호를 Git에 올라가는 application.properties에 적으면 안 됩니다. "
+                + "application-local.properties 또는 환경변수 " + PASSWORD_ENV + "로 옮기세요.");
+        }
         String password = environment.getProperty(PASSWORD_PROPERTY);
         if (password == null || password.isBlank()) {
             throw new IllegalStateException("Jasypt 비밀번호가 없습니다. 로컬은 application-local.properties에 "
                 + PASSWORD_PROPERTY + "를, 서버·CI는 환경변수 " + PASSWORD_ENV + "를 설정하세요.");
-        }
-        if (environment instanceof ConfigurableEnvironment configurable && definedInCommittedConfig(configurable)) {
-            throw new IllegalStateException("Jasypt 비밀번호를 Git에 올라가는 application.properties에 적으면 안 됩니다. "
-                + "application-local.properties 또는 환경변수 " + PASSWORD_ENV + "로 옮기세요.");
         }
         return password;
     }

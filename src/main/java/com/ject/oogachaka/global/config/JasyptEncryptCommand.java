@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import org.jasypt.encryption.StringEncryptor;
 
 /**
  * Spring 애플리케이션과 DB를 시작하지 않고 설정값 한 줄을 암호화한다.
@@ -20,7 +21,7 @@ public final class JasyptEncryptCommand {
     }
 
     public static void main(String[] args) throws Exception {
-        var encryptor = JasyptEncryptorFactory.create(resolvePassword());
+        StringEncryptor encryptor = JasyptEncryptorFactory.create(resolvePassword());
         String value;
         if (System.console() != null) {
             char[] input = System.console().readPassword("암호화할 값: ");
