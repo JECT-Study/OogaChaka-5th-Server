@@ -46,9 +46,10 @@ tasks.named('test') {
 // 기본 입력은 stdin이다. -Pvalue도 지원하지만 비밀값은 셸 이력에 남기지 않는다.
 tasks.register('jasyptEncrypt', JavaExec) {
     group = 'application'
-    description = '환경변수의 Jasypt 비밀번호로 stdin 또는 -Pvalue 값을 암호화한다.'
+    description = 'Jasypt 비밀번호(환경변수 또는 application-local.properties)로 stdin 또는 -Pvalue 값을 암호화한다.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.ject.oogachaka.global.config.JasyptEncryptCommand'
+    systemProperty 'jasypt.localConfig', file('src/main/resources/application-local.properties').absolutePath
     standardInput = System.in
     doFirst {
         if (project.hasProperty('value')) {

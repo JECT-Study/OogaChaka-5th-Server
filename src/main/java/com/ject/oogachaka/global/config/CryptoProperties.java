@@ -57,7 +57,7 @@ public class CryptoProperties {
 
     private static byte[] decode(String value) {
         if (value == null || value.isBlank()) {
-            throw new IllegalStateException("AES 및 HMAC 키 환경변수가 모두 필요합니다.");
+            throw new IllegalStateException("AES 및 HMAC 키가 모두 필요합니다. 로컬은 application-local.properties, 서버·CI는 환경변수로 설정하세요.");
         }
         byte[] key;
         try {

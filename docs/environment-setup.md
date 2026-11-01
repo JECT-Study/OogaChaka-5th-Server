@@ -1,14 +1,36 @@
 # 환경 설정 및 암호화 가이드
 
-Java 17을 사용한다. `application.properties`의 DB `ENC(REPLACE_...)`는 실제 암호문이 아닌
-자리표시자이므로 실행 전에 교체해야 한다. 로컬 설정은 커밋하지 않는
-`src/main/resources/application-local.properties`에 작성한다.
+Java 17을 사용한다. 처음 세팅한다면 아래 [한눈에 보기](#한눈에-보기)와
+[로컬 실행](#로컬-실행)만 순서대로 따라 하면 된다.
 
-## 환경변수
+## 한눈에 보기
+
+비밀값은 **어디에 쓰이느냐**에 따라 넣는 곳이 다르다.
+
+| 비밀값 | 로컬 개발 | 서버·CI | Git에 올라가나 |
+| --- | --- | --- | --- |
+| 내 로컬 DB 접속 정보 | `application-local.properties`에 평문 | - | 안 올라감 (`.gitignore`) |
+| 키 4개 (AES, HMAC 2개, JWT) | `application-local.properties`에 평문 | 환경변수 | 안 올라감 |
+| Jasypt 비밀번호 | `application-local.properties`에 평문 | 환경변수 `JASYPT_ENCRYPTOR_PASSWORD` | 안 올라감 |
+| 공용 DB 접속 정보, 공용 OAuth secret | `application.properties`에 `ENC(...)` | 동일 | **올라감 (암호문)** |
+
+- **Jasypt**는 Git에 올라가는 `application.properties`의 비밀값을 `ENC(...)` 암호문으로 바꿔 두는
+  도구다. 앱이 켜질 때 Jasypt 비밀번호로 `ENC(...)`를 풀어 원래 값으로 쓴다. 비밀번호가 없는 사람은
+  저장소를 받아도 `ENC(...)` 안의 값을 알 수 없다.
+- Jasypt 비밀번호는 어디서 발급받는 값이 아니라 **우리가 정하는 값**이다. `ENC(...)`를 만들 때와
+  풀 때 같은 비밀번호를 써야 하므로 팀이 하나를 정해 비공개로 공유한다.
+- `application.properties`의 DB `ENC(REPLACE_...)`는 아직 실제 암호문이 아닌 자리표시자다.
+  공용 DB를 정하면 [공용 값 암호화](#공용-값-암호화-applicationproperties)로 교체한다.
+  로컬에서는 `application-local.properties`가 이 값을 덮어쓰므로 그대로 둬도 된다.
+
+## 환경변수 (서버·CI)
+
+서버와 CI는 아래 환경변수로 주입한다. 로컬 개발은 환경변수 대신
+`application-local.properties`에 같은 값을 적는다([로컬 실행](#로컬-실행) 참고).
 
 | 환경변수 | 형식과 용도 | 필요 시점 |
 | --- | --- | --- |
-| `JASYPT_ENCRYPTOR_PASSWORD` | 설정 암호화/복호화 비밀번호. 환경별로 분리하며 프로퍼티나 `-D`로 대체할 수 없다. | 모든 애플리케이션 시작, 암호화 도구 |
+| `JASYPT_ENCRYPTOR_PASSWORD` | 설정 암호화/복호화 비밀번호. 로컬은 `application-local.properties`의 `jasypt.encryptor.password`로 대신한다. `application.properties`에 적으면 시작이 실패한다. | 모든 애플리케이션 시작, 암호화 도구 |
 | `AES_ENCRYPTION_KEY` | Base64로 인코딩한 무작위 32바이트 AES v1 키 | 모든 애플리케이션 시작 |
 | `HMAC_SOCIAL_ID_KEY` | Base64 32바이트 소셜 ID 조회 키 | 모든 애플리케이션 시작 |
 | `HMAC_DEVICE_TOKEN_KEY` | Base64 32바이트 디바이스 토큰 중복 검사 키 | 모든 애플리케이션 시작 |
@@ -29,73 +51,117 @@ Java 17을 사용한다. `application.properties`의 DB `ENC(REPLACE_...)`는 �
 
 AES 키와 두 HMAC 키는 디코딩 결과가 모두 서로 달라야 한다. 이전 AES 버전의 키도 HMAC 키와
 같으면 시작에 실패한다. 키 누락, 잘못된 Base64, 32바이트가 아닌 값도 시작에 실패한다.
-JWT 서명 키와 Jasypt 비밀번호까지 별도로 생성·보관한다. 로컬·테스트·운영의 키를 공유하지 않는다.
-
-## 키 생성과 Jasypt 비밀번호
-
-각 키마다 다음 명령을 별도로 실행하여 안전한 개인 저장소나 Secrets에 보관한다.
-명령 출력은 실제 키이므로 소스/문서/로그에 붙여 넣지 않는다.
-
-```sh
-openssl rand -base64 32
-```
-
-AES/HMAC/JWT 키는 환경변수에 원래의 Base64 키를 넣는다. 이 키들을 Jasypt로 감싸지 않는다.
-Jasypt는 DB 비밀번호, OAuth secret 등 외부 설정 비밀값을 보호한다.
-
-zsh에서 비밀번호를 이력에 남기지 않고 읽는 예시:
-
-```sh
-read -rs 'JASYPT_ENCRYPTOR_PASSWORD?Jasypt 비밀번호: '
-export JASYPT_ENCRYPTOR_PASSWORD
-printf '\n'
-```
-
-환경변수를 파일에 보관한다면 Git에서 제외된 파일만 사용한다. Spring Boot는 `.env`를 자동으로
-읽지 않으므로 셸이나 IDE가 실제 프로세스 환경변수로 내보내야 한다.
-
-## 설정값 암호화
-
-암호화 도구는 애플리케이션/DB/Flyway를 시작하지 않는다. 아래에서 요구하는 환경변수는
-`JASYPT_ENCRYPTOR_PASSWORD`뿐이다. 이 작업 환경의 Gradle 실행 예시:
-
-```sh
-export JAVA_HOME=/Users/baegdohyeon/Library/Java/JavaVirtualMachines/corretto-17.0.11/Contents/Home
-read -rs 'JASYPT_INPUT?암호화할 값 한 줄: '
-printf '\n'
-printf '%s\n' "$JASYPT_INPUT" | ./gradlew -q --console=plain jasyptEncrypt
-unset JASYPT_INPUT
-```
-
-출력된 `ENC(...)` 전체를 설정값에 붙여 넣는다. URL, username, password는 각각 암호화한다.
-OAuth secret과 Redis 비밀번호, 내용으로 주입하는 서비스 계정 JSON도 같은 방식이다.
-여러 줄 JSON은 한 줄 JSON으로 변환한 뒤 입력한다. `-Pvalue` 입력은 셸 이력과 프로세스 인자에
-남으므로 예제/더미 값 확인에만 사용한다.
-
-```sh
-./gradlew -q jasyptEncrypt -Pvalue=TEST_ONLY_DUMMY_VALUE
-```
-
-규격은 `PBEWITHHMACSHA512ANDAES_256`, 키 유도 10,000회, 무작위 salt/IV, Base64다.
-`JasyptEncryptorFactory`를 CLI와 `jasyptStringEncryptor` 빈이 공유한다. 알고리즘 설정은 이
-팩토리에 고정되어 있다. 기존 다른 규격의 암호문은 이 도구로 다시 암호화한다.
-암호문을 만드는 환경과 애플리케이션 환경의 비밀번호가 같아야 한다.
+JWT 서명 키와 Jasypt 비밀번호까지 별도로 생성·보관한다. 로컬·테스트·운영 환경끼리는 키를 공유하지
+않는다. 반대로 **같은 DB를 쓰는 팀원끼리는 같은 키를 써야 한다**(아래 3단계 참고).
 
 ## 로컬 실행
+
+처음 한 번만 1~3단계를 하고, 이후에는 4단계(실행)만 하면 된다.
+**IDE 실행 설정이나 셸에 환경변수를 넣을 필요가 없다.** 로컬 값은 전부 파일 하나에 들어간다.
+
+### 1단계. 로컬 설정 파일 만들기
+
+저장소 루트에서 실행한다.
 
 ```sh
 cp src/main/resources/application-local.properties.example src/main/resources/application-local.properties
 ```
 
-예제 파일의 DB 자리표시자를 **로컬 MySQL** 접속 정보를 암호화한 값으로 교체한다.
-제공자를 활성화할 때 해당 제공자의 예제 자리표시자도 모두 교체한다. 사용하지 않는 제공자는
-false로 두고 secret 자리표시자 줄을 삭제하거나 빈 값으로 둔다.
-필수 환경변수를 셸에 주입한 뒤 실행한다.
+- 이 파일은 `.gitignore`에 등록되어 있어 Git에 올라가지 않는다. 그래서 값을 **평문**으로 적어도 된다.
+  확인하려면 `git check-ignore -v src/main/resources/application-local.properties`를 실행한다.
+  한 줄이 출력되면 무시 대상이다(출력이 없으면 커밋하지 말고 팀에 알린다).
+- local 프로필로 실행하면 Spring이 `application.properties`를 먼저 읽고 이 파일을 그 위에 덮어쓴다.
+  같은 키는 이 파일 값이 이기고, 이 파일에 없는 키는 `application.properties` 값을 그대로 쓴다.
+- 예제 파일(`.example`)은 고치지 않는다. 복사한 `application-local.properties`만 고친다.
+
+### 2단계. 로컬 DB 정보 적기
+
+내 PC의 MySQL 정보를 평문으로 적는다. DB(스키마)는 미리 만들어 둔다. 테이블은 앱이 켜질 때
+Flyway가 만든다.
+
+```sql
+CREATE DATABASE oogachaka;
+```
+
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/oogachaka
+spring.datasource.username=root
+spring.datasource.password=내_로컬_DB_비밀번호
+```
+
+**공용 DB 주소는 넣지 않는다.** 앱이 켜지는 순간 Flyway가 아직 병합되지 않은 마이그레이션까지
+그 DB에 실행한다.
+
+### 3단계. 키 4개와 Jasypt 비밀번호 넣기
+
+값은 아래 명령으로 만든다. 저장소 루트에서 실행하면 파일에 바로 붙여 넣을 수 있는 5줄이 출력된다.
 
 ```sh
-export SPRING_PROFILES_ACTIVE=local
-./gradlew bootRun
+for k in app.crypto.aes-keys.v1 app.crypto.hmac-social-id-key app.crypto.hmac-device-token-key app.jwt.secret jasypt.encryptor.password; do
+  echo "$k=$(openssl rand -base64 32)"
+done
 ```
+
+출력 예시(형태만 참고, 이 값을 쓰지 않는다):
+
+```properties
+app.crypto.aes-keys.v1=q3N8x1+Yb0kP2c6ZsV9tLmR4wE7hJdA5uFgTnXoKiQ8=
+app.crypto.hmac-social-id-key=...
+app.crypto.hmac-device-token-key=...
+app.jwt.secret=...
+jasypt.encryptor.password=...
+```
+
+`application-local.properties`의 `REPLACE_WITH_OPENSSL_RAND_BASE64_32`가 들어간 5줄을 지우고,
+출력된 5줄을 그 자리에 붙여 넣는다.
+
+| 파일에 적는 키 | 용도 | 서버·CI에서 쓰는 환경변수 이름 |
+| --- | --- | --- |
+| `app.crypto.aes-keys.v1` | DB에 저장하는 디바이스 토큰 원문을 AES-256-GCM으로 암호화/복호화 | `AES_ENCRYPTION_KEY` |
+| `app.crypto.hmac-social-id-key` | 소셜 로그인 사용자 ID를 HMAC 해시로 바꿔 조회·중복 검사 | `HMAC_SOCIAL_ID_KEY` |
+| `app.crypto.hmac-device-token-key` | 디바이스 토큰을 HMAC 해시로 바꿔 조회·중복 검사(`token_hash` 컬럼) | `HMAC_DEVICE_TOKEN_KEY` |
+| `app.jwt.secret` | 로그인 후 발급하는 JWT(access/refresh) 서명 | `JWT_SECRET` |
+| `jasypt.encryptor.password` | `application.properties`의 `ENC(...)` 값을 풀 때 쓰는 비밀번호 | `JASYPT_ENCRYPTOR_PASSWORD` |
+
+지켜야 할 규칙:
+
+- 5개는 모두 **서로 다른 값**이어야 한다. AES 키와 HMAC 키 2개가 서로 같으면 앱이 시작되지 않는다.
+- 값을 따옴표로 감싸지 않고, 앞뒤에 공백을 넣지 않는다.
+- `jasypt.encryptor.password`를 Git에 올라가는 `application.properties`에 적으면 앱이 시작되지 않는다.
+  실수로 비밀번호가 커밋되는 것을 막기 위한 검사다.
+- **혼자 쓰는 로컬 DB라면** 내가 만든 값을 그대로 쓰면 된다.
+- **팀이 같은 DB를 함께 쓴다면** 5개 값을 팀원 모두가 똑같이 써야 한다. 한 명이 한 번 만들어
+  비공개로 공유한다(Git, 공개 채널 금지). 값이 다르면 다음 문제가 생긴다.
+  - AES 키가 다르면 다른 팀원이 저장한 디바이스 토큰을 복호화하지 못한다.
+  - 소셜 HMAC 키가 다르면 같은 소셜 계정의 해시가 달라져, 이미 가입한 사용자가 신규 가입으로 처리된다.
+  - Jasypt 비밀번호가 다르면 Git에 올라간 `ENC(...)`를 풀지 못해 시작에 실패한다.
+- 한 번 데이터를 쌓은 뒤 AES/HMAC 키를 바꾸면 기존 데이터를 읽거나 찾을 수 없다. 키 교체는 아래
+  "AES 교체" 절차를 따른다.
+
+### 4단계. 실행
+
+IntelliJ: `Run > Edit Configurations > OogachakaApplication`에서 JRE를 Java 17로,
+**Active profiles를 `local`**로 지정하고 실행한다. 이 두 가지 외에 넣을 것은 없다.
+
+터미널:
+
+```sh
+SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+```
+
+시작에 실패하면 로그의 첫 예외 메시지를 아래 표에서 찾는다.
+
+| 메시지 | 원인 | 해결 |
+| --- | --- | --- |
+| `Jasypt 비밀번호가 없습니다` | local 프로필이 꺼져 있거나, 파일이 없거나, `jasypt.encryptor.password`가 비어 있다 | Active profiles `local` 확인, 1·3단계 확인 |
+| `Jasypt 비밀번호를 Git에 올라가는 application.properties에 적으면 안 됩니다` | 공통 파일에 비밀번호를 적었다 | 그 줄을 지우고 `application-local.properties`로 옮긴다 |
+| `AES 및 HMAC 키가 모두 필요합니다` | 키 3개 중 하나가 비어 있다 | 3단계 확인 |
+| `유효한 Base64 형식이어야 합니다` / `32바이트여야 합니다` | `REPLACE_...`가 남아 있거나 값이 잘렸다 | `openssl rand -base64 32`로 다시 만든다 |
+| `AES 키와 용도별 HMAC 키는 서로 다른 키여야 합니다` | 같은 값을 두 번 붙여 넣었다 | 값마다 따로 만든다 |
+| `Communications link failure`, `Access denied for user` | DB가 꺼져 있거나 DB 정보가 틀렸다 | 2단계 확인 |
+| `Failed to bind properties under 'spring.datasource.url'` 등 `ENC(...)` 값이 들어간 키의 바인딩 실패 | `ENC(...)`를 만든 비밀번호와 지금 쓰는 비밀번호가 다르다. 셸에 `JASYPT_ENCRYPTOR_PASSWORD`가 남아 있으면 파일보다 그 값이 우선한다 | 팀 비밀번호로 맞추고, `echo $JASYPT_ENCRYPTOR_PASSWORD`로 남은 환경변수가 없는지 확인한다 |
+
+Gradle이 Java 17을 찾지 못하면 `JAVA_HOME`을 Java 17 경로로 지정한 뒤 실행한다.
 
 앱 시작은 Flyway를 실행한다. V2는 빈 `device_token` 테이블을 전제로 한다. 기존 행이 있으면
 NOT NULL/UNIQUE 추가가 실패할 수 있으므로 적용 전에 별도 백필·중복 정리를 준비한다.
@@ -156,10 +222,46 @@ WHERE TABLE_SCHEMA = DATABASE()
 참고: [MySQL SQL mode](https://dev.mysql.com/doc/refman/8.4/en/sql-mode.html),
 [컬럼 문자 집합 변경](https://dev.mysql.com/doc/refman/8.4/en/charset-column.html).
 
-IntelliJ에서는 `Run > Edit Configurations > OogachakaApplication`의 JRE를 Java 17로,
-Active profiles를 `local`로 지정한다. `Environment variables` 편집 창에 필수 변수들을 추가한다.
-Gradle 실행 구성도 동일하게 환경변수를 넣고 Gradle JVM을 Java 17로 지정한다.
-개인 실행 구성은 `.idea` 아래에 보관하고 비밀값을 담은 공유 실행 구성 파일은 커밋하지 않는다.
+## 공용 값 암호화 (application.properties)
+
+**공용 DB 정보나 공용 OAuth secret을 Git에 올릴 때만** 한다. 로컬 개발만 할 때는 필요 없다.
+
+1. 내 `application-local.properties`의 `jasypt.encryptor.password`가 **팀에서 정한 Jasypt 비밀번호**인지
+   확인한다. 암호화 도구는 환경변수 `JASYPT_ENCRYPTOR_PASSWORD`를 먼저 보고, 없으면 이 파일에서
+   비밀번호를 읽는다. 앱·DB·Flyway는 시작하지 않는다.
+2. 저장소 루트에서 아래를 실행한다. 첫 줄을 실행하면 입력 프롬프트가 뜨고, 암호화할 값을 붙여 넣고
+   Enter를 누른다. 입력한 값은 화면과 셸 이력에 남지 않는다.
+
+   ```sh
+   read -rs 'JASYPT_INPUT?암호화할 값 한 줄: '
+   printf '\n'
+   printf '%s\n' "$JASYPT_INPUT" | ./gradlew -q --console=plain jasyptEncrypt
+   unset JASYPT_INPUT
+   ```
+
+3. `ENC(...)` 형태의 한 줄이 출력된다. 괄호까지 전부 복사해 `application.properties`의 해당 값을 바꾼다.
+
+   ```properties
+   spring.datasource.url=ENC(출력된_암호문)
+   spring.datasource.username=ENC(출력된_암호문)
+   spring.datasource.password=ENC(출력된_암호문)
+   ```
+
+4. 값마다 2~3을 반복한다. DB의 URL, username, password는 **각각 따로** 암호화한다.
+5. 커밋한다. 팀원은 같은 Jasypt 비밀번호만 있으면 이 값을 그대로 쓸 수 있다.
+
+참고:
+
+- 같은 값을 다시 암호화해도 매번 다른 `ENC(...)`가 나온다. 정상이다(무작위 salt/IV).
+- OAuth secret, Redis 비밀번호, 내용으로 주입하는 서비스 계정 JSON도 같은 방식이다. 서버 환경변수의
+  값으로 `ENC(...)`를 넣어도 풀린다. 여러 줄 JSON은 한 줄 JSON으로 바꾼 뒤 입력한다.
+- AES/HMAC/JWT 키와 Jasypt 비밀번호 자체는 Jasypt로 감싸지 않는다.
+- `./gradlew -q jasyptEncrypt -Pvalue=TEST_ONLY_DUMMY_VALUE`처럼 값을 바로 넘길 수도 있지만 셸 이력과
+  프로세스 인자에 남으므로 더미 값 확인에만 쓴다.
+
+규격은 `PBEWITHHMACSHA512ANDAES_256`, 키 유도 10,000회, 무작위 salt/IV, Base64다.
+`JasyptEncryptorFactory`를 CLI와 `jasyptStringEncryptor` 빈이 공유한다. 알고리즘 설정은 이
+팩토리에 고정되어 있다. 기존 다른 규격의 암호문은 이 도구로 다시 암호화한다.
 
 ## 후속 브랜치 설정 계약
 
@@ -271,9 +373,9 @@ UNIQUE·ascii_bin 검증을 작성했다.
 통합 테스트와 `contextLoads`는 공용 DB를 사용하지 않으며 로컬/CI 모두 Docker가 필요하다.
 Docker가 없으면 테스트는 실패한다. Docker 부재를 이유로 자동으로 건너뛰지 않는다.
 
-추후 테스트 실행이 허용되면 Docker를 켜고 `JASYPT_ENCRYPTOR_PASSWORD`에 테스트 전용 더미
-비밀번호를 환경변수로 넣은 뒤 Gradle `test`를 실행한다. `contextLoads`는 test 프로필의 명시적
-더미 키와 Testcontainers DB를 사용한다. 본 작업에서는 테스트를 실행하지 않았다.
+테스트는 Docker를 켠 뒤 `./gradlew test`로 실행한다. 별도 환경변수는 필요 없다.
+`application-test.properties`에 테스트 전용 더미 키 4개와 더미 Jasypt 비밀번호가 들어 있고,
+`contextLoads`는 이 test 프로필과 Testcontainers DB를 사용한다. 본 작업에서는 테스트를 실행하지 않았다.
 추후 테스트 CI도 Docker에 접근 가능한 runner에서 전체 테스트를 실행하고, 테스트 클래스/태그를
 제외하여 통합 검증을 생략하지 않는다. 컴파일 전용 CI의 성공은 통합 테스트 통과를 의미하지 않는다.
 
