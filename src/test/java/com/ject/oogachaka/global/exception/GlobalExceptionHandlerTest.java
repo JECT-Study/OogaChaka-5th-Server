@@ -18,7 +18,7 @@ class GlobalExceptionHandlerTest {
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
     @Test
-    void wrappedJpaEncryptionFailureUsesCryptoResponseWithoutWrapperMessage() throws Exception {
+    void wrappedJpaEncryptionFailureUsesCryptoResponse() throws Exception {
         RuntimeException exception = new RuntimeException("TEST_ONLY_OUTER_CONTEXT",
             new PersistenceException("TEST_ONLY_DATABASE_CONTEXT", new EncryptionException(EncryptionException.Operation.DECRYPT)));
 

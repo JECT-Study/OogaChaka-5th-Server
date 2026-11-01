@@ -85,13 +85,16 @@ class EncryptionServiceTest {
     }
 
     @Test
-    void converterHandlesNullAndDelegatesRoundTrip() {
+    void converterEncryptsStoredValuesAndPreservesNull() {
         EncryptionConverter converter = new EncryptionConverter(service);
+        String encrypted = converter.convertToDatabaseColumn("token");
 
         assertThat(service.encrypt(null)).isNull();
         assertThat(service.decrypt(null)).isNull();
         assertThat(converter.convertToDatabaseColumn(null)).isNull();
         assertThat(converter.convertToEntityAttribute(null)).isNull();
-        assertThat(converter.convertToEntityAttribute(converter.convertToDatabaseColumn("token"))).isEqualTo("token");
+        assertThat(encrypted).startsWith("v1:").isNotEqualTo("token");
+        assertThat(service.decrypt(encrypted)).isEqualTo("token");
+        assertThat(converter.convertToEntityAttribute(service.encrypt("token"))).isEqualTo("token");
     }
 }
