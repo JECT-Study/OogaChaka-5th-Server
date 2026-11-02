@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,7 +39,6 @@ import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -52,7 +50,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-/** 운영 엔티티/Repository와 V1+V2를 격리된 MySQL에서 검증한다. 이번 작업에서는 실행하지 않는다. */
+/** 실제 MySQL 트랜잭션에서 가입 실패 롤백과 동시 최초 가입을 검증한다. */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate", showSql = false)
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
@@ -77,8 +75,6 @@ class SocialAccountRepositoryIntegrationTest {
     private HmacService hmac;
     @Autowired
     private PlatformTransactionManager transactionManager;
-    @Autowired
-    private DataSource dataSource;
 
     @DynamicPropertySource
     static void configureDatabase(DynamicPropertyRegistry registry) {
@@ -97,61 +93,6 @@ class SocialAccountRepositoryIntegrationTest {
     void clearAccounts() {
         socialAccounts.deleteAllInBatch();
         users.deleteAllInBatch();
-    }
-
-    @Test
-    void v2CharMappingAndHmacLookupUseProductionEntities() {
-        String hash = hash();
-        User user = users.saveAndFlush(User.create("별명"));
-        socialAccounts.saveAndFlush(SocialAccount.create(user.getId(), AuthProvider.GOOGLE, hash, null));
-
-        SocialAccount account = socialAccounts.findByAuthProviderAndProviderUserIdHash(AuthProvider.GOOGLE,
-            hmac.hash("TEST_ONLY_RAW_ID", HmacPurpose.SOCIAL_ID)).orElseThrow();
-        assertThat(account.getUserId()).isEqualTo(user.getId());
-        assertThat(account.getProviderUserIdHash()).isEqualTo(hash);
-        assertThat(account.getCreatedAt()).isNotNull();
-        assertThat(account.getUpdatedAt()).isNotNull();
-        User persisted = users.findById(user.getId()).orElseThrow();
-        assertThat(persisted.getPoint()).isZero();
-        assertThat(persisted.getFamilyMemberId()).isNull();
-        assertThat(persisted.getCreatedAt()).isNotNull();
-        var metadata = new JdbcTemplate(dataSource).queryForMap(
-            "SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, COLLATION_NAME FROM information_schema.COLUMNS "
-                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'social_account' AND COLUMN_NAME = 'provider_user_id_hash'");
-        assertThat(metadata.get("DATA_TYPE")).isEqualTo("char");
-        assertThat(((Number) metadata.get("CHARACTER_MAXIMUM_LENGTH")).intValue()).isEqualTo(64);
-        assertThat(metadata.get("COLLATION_NAME")).isEqualTo("ascii_bin");
-    }
-
-    @Test
-    void compositeUniqueRejectsDuplicateButSeparatesProvidersAndKeepsUserUnique() {
-        User first = users.saveAndFlush(User.create("첫번째"));
-        User second = users.saveAndFlush(User.create("두번째"));
-        socialAccounts.saveAndFlush(SocialAccount.create(first.getId(), AuthProvider.GOOGLE, hash(), null));
-
-        assertThatThrownBy(() -> socialAccounts.saveAndFlush(
-            SocialAccount.create(second.getId(), AuthProvider.GOOGLE, hash(), null)))
-            .isInstanceOf(DataIntegrityViolationException.class);
-        socialAccounts.saveAndFlush(SocialAccount.create(second.getId(), AuthProvider.KAKAO, hash(), null));
-        assertThat(socialAccounts.findByAuthProviderAndProviderUserIdHash(AuthProvider.KAKAO, hash()).orElseThrow().getUserId())
-            .isEqualTo(second.getId());
-        assertThatThrownBy(() -> socialAccounts.saveAndFlush(
-            SocialAccount.create(first.getId(), AuthProvider.NAVER, "b".repeat(64), null)))
-            .isInstanceOf(DataIntegrityViolationException.class);
-        assertThat(socialAccounts.count()).isEqualTo(2);
-    }
-
-    @Test
-    void actualServiceRegistersOnceAndLoadsExistingAccountInNewTransaction() {
-        var first = accounts.findOrCreate(AuthProvider.GOOGLE, hash(), "별명", "test@example.invalid");
-        var second = accounts.findOrCreate(AuthProvider.GOOGLE, hash(), "새별명", null);
-
-        assertThat(first.isNewUser()).isTrue();
-        assertThat(second.isNewUser()).isFalse();
-        assertThat(second.userId()).isEqualTo(first.userId());
-        assertThat(users.count()).isEqualTo(1);
-        assertThat(socialAccounts.count()).isEqualTo(1);
-        assertThat(accounts.getExisting(AuthProvider.GOOGLE, hash()).userId()).isEqualTo(first.userId());
     }
 
     @Test

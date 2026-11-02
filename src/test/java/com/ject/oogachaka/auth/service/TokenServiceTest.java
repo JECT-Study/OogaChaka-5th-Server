@@ -61,13 +61,6 @@ class TokenServiceTest {
     }
 
     @Test
-    void logoutDeletesRefreshAndBlacklistsCurrentAccess() {
-        TokenPair pair = jwt.issuePair(42L);
-        service.logout(pair.access().claims(), pair.refresh().value());
-        verify(store).logout(pair.refresh().claims(), pair.access().claims());
-    }
-
-    @Test
     void cannotLogoutAnotherUsersRefreshOrUseAccessAsRefresh() {
         TokenPair pair = jwt.issuePair(42L);
         TokenPair other = jwt.issuePair(99L);

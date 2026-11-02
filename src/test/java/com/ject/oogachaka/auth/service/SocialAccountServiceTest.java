@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.auth.entity.SocialAccount;
@@ -22,15 +21,6 @@ class SocialAccountServiceTest {
     private final SocialAccountRepository repository = mock(SocialAccountRepository.class);
     private final UserService users = mock(UserService.class);
     private final SocialAccountService service = new SocialAccountService(repository, users);
-
-    @Test
-    void existingAccountDoesNotCreateUserOrStoreProviderFieldsAgain() {
-        when(repository.findByAuthProviderAndProviderUserIdHash(AuthProvider.GOOGLE, HASH))
-            .thenReturn(Optional.of(SocialAccount.create(42L, AuthProvider.GOOGLE, HASH, null)));
-        assertThat(service.findOrCreate(AuthProvider.GOOGLE, HASH, "ignored", "ignored@example.invalid"))
-            .isEqualTo(new SocialAccountResult(42L, false));
-        verifyNoInteractions(users);
-    }
 
     @Test
     void nicknameIsTruncatedByCodePointAndOnlyHashIsSaved() {

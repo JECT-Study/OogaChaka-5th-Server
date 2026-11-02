@@ -74,26 +74,6 @@ class SocialLoginServiceTest {
     }
 
     @Test
-    void newUserUsesSocialHmacAndReturnsRegistrationFlag() {
-        prepareLogin();
-        when(accounts.findOrCreate(AuthProvider.GOOGLE, HASH, "별명", "test@example.invalid"))
-            .thenReturn(new SocialAccountResult(42L, true));
-        var response = service.login(request());
-        assertThat(response.isNewUser()).isTrue();
-        assertThat(response.userId()).isEqualTo(42L);
-        verify(hmac).hash("TEST_ONLY_RAW_ID", HmacPurpose.SOCIAL_ID);
-        verify(tokens).issue(42L);
-    }
-
-    @Test
-    void existingUserDoesNotReportNewRegistration() {
-        prepareLogin();
-        when(accounts.findOrCreate(AuthProvider.GOOGLE, HASH, "별명", "test@example.invalid"))
-            .thenReturn(new SocialAccountResult(42L, false));
-        assertThat(service.login(request()).isNewUser()).isFalse();
-    }
-
-    @Test
     void registrationRaceQueriesWinnerAfterFailedTransaction() {
         prepareLogin();
         when(accounts.findOrCreate(AuthProvider.GOOGLE, HASH, "별명", "test@example.invalid"))

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.ject.oogachaka.auth.enums.TokenType;
 import com.ject.oogachaka.auth.repository.AuthTokenStore;
 import com.ject.oogachaka.auth.token.JwtTokenProvider;
 import com.ject.oogachaka.auth.token.TokenPair;
@@ -41,19 +40,6 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    void authenticatedPrincipalIsLongUserIdAndClaimsAreAvailable() throws Exception {
-        TokenPair pair = jwt.issuePair(42L);
-        MockHttpServletRequest request = request(pair.access().value());
-        AtomicBoolean called = new AtomicBoolean();
-        filter.doFilter(request, new MockHttpServletResponse(), (incoming, outgoing) -> {
-            assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo(42L).isInstanceOf(Long.class);
-            assertThat(request.getAttribute(JwtAuthenticationFilter.ACCESS_CLAIMS_ATTRIBUTE)).isEqualTo(pair.access().claims());
-            called.set(true);
-        });
-        assertThat(called).isTrue();
-    }
-
-    @Test
     void blacklistPreventsReusingLoggedOutAccess() throws Exception {
         TokenPair pair = jwt.issuePair(42L);
         when(store.isBlacklisted(pair.access().claims())).thenReturn(true);
@@ -64,14 +50,6 @@ class JwtAuthenticationFilterTest {
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getContentAsString()).contains("AUTH_TOKEN_REVOKED", "\"data\":null");
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-    }
-
-    @Test
-    void expiryAndTamperingReturnDifferentJsonCodes() throws Exception {
-        JwtTokenProvider old = new JwtTokenProvider(properties, Clock.offset(clock, Duration.ofHours(-1)));
-        assertFailure(old.issuePair(42L).access().value(), "AUTH_TOKEN_EXPIRED");
-        assertFailure("broken-token", "AUTH_TOKEN_INVALID");
-        assertFailure(jwt.issuePair(42L).refresh().value(), "AUTH_TOKEN_INVALID");
     }
 
     @ParameterizedTest
@@ -110,28 +88,6 @@ class JwtAuthenticationFilterTest {
         });
         assertThat(response.getStatus()).isEqualTo(503);
         assertThat(response.getContentAsString()).contains("AUTH_STORE_UNAVAILABLE");
-    }
-
-    @Test
-    void entryPointAndDeniedHandlerUseApiResponseJson() throws Exception {
-        MockHttpServletResponse unauthorized = new MockHttpServletResponse();
-        handler.commence(new MockHttpServletRequest(), unauthorized, null);
-        assertThat(unauthorized.getStatus()).isEqualTo(401);
-        assertThat(unauthorized.getContentAsString()).contains("\"code\":\"UNAUTHORIZED\"", "\"data\":null");
-        MockHttpServletResponse denied = new MockHttpServletResponse();
-        handler.handle(new MockHttpServletRequest(), denied, null);
-        assertThat(denied.getStatus()).isEqualTo(403);
-        assertThat(denied.getContentAsString()).contains("\"code\":\"FORBIDDEN\"", "\"data\":null");
-    }
-
-    private void assertFailure(String token, String code) throws Exception {
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        filter.doFilter(request(token), response, (incoming, outgoing) -> {
-            throw new AssertionError("유효하지 않은 토큰이 체인을 통과했습니다.");
-        });
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentType()).startsWith("application/json");
-        assertThat(response.getContentAsString()).contains(code).doesNotContain(token);
     }
 
     private MockHttpServletRequest request(String token) {

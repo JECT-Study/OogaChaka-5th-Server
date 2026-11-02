@@ -30,7 +30,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-/** 실제 Redis의 GETDEL/Lua/TTL/동시성 검증용. 이번 작업에서는 작성·컴파일만 한다. */
+/** 실제 Redis에서 토큰 갱신 경합, 기기별 로그아웃, state 재사용 차단을 검증한다. */
 @Testcontainers
 class AuthRedisIntegrationTest {
 

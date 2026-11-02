@@ -167,8 +167,10 @@ scheme/host/port/path/끝 슬래시까지 설정값과 일치시킨다. 서버�
 - 네이버 [로그인 API](https://developers.naver.com/docs/login/api/api.md),
   [프로필 API](https://developers.naver.com/docs/login/profile/profile.md).
 
-이번 작업은 컴파일까지만 확인했다. 테스트 실행, Docker/Redis/MySQL/Flyway 실행, 실제 제공자 호출은 하지 않았다.
-JUnit/Mockito/MockMvc 및 Testcontainers Redis/MySQL 테스트는 작성되어 있으며, 실행이 허용되면 Docker와
-테스트용 Jasypt 환경변수를 준비해 검증한다. MySQL의 실제 User/SocialAccount 매핑 validate는 기존
-contextLoads와 SocialAccountRepositoryIntegrationTest에서 확인하도록 작성했다. 후자는 V1/V2 적용,
-운영 Repository의 HMAC 조회·제공자별 UNIQUE·사용자 UNIQUE·가입 롤백·동시 최초 가입을 다룬다.
+`./gradlew test`는 외부 서버 없이 JWT 검증, 소셜 제공자 요청·오류 처리, HTTP 인증 경계와 응답 계약을 확인한다.
+단순 저장·조회 및 다른 계층에서 이미 확인하는 검증은 중복하지 않는다.
+
+`./gradlew integrationTest`는 Docker가 필요하다. 실제 Redis에서 동시 refresh 교체·로그아웃·state 재사용
+차단을, MySQL에서 가입 실패 롤백·동시 최초 가입을 확인한다. 컨테이너 접속 정보와 테스트 전용 더미 키를
+테스트에서 주입하며 로컬·운영 DB 계정이나 Jasypt 비밀번호가 필요하지 않다. MySQL은 V1/V2 적용 후
+실제 엔티티 매핑을 validate한다. 실제 소셜 제공자와의 연동은 별도 확인이 필요하다.
