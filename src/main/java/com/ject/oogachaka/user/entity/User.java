@@ -7,15 +7,15 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 /** 사용자. 가족 가입 전에는 가족 구성원 ID가 없다. */
 @Getter
 @Entity
 @Table(name = "users")
+@Builder(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PROTECTED)
 public class User extends BaseTimeEntity {
 
     @Id
@@ -34,12 +34,10 @@ public class User extends BaseTimeEntity {
     @Column(length = 2048)
     private String profileImageUrl;
 
-    private User(String nickname) {
-        this.nickname = nickname;
-        this.point = 0;
-    }
-
     public static User create(String nickname) {
-        return new User(nickname);
+        return User.builder()
+                .nickname(nickname)
+                .point(0)
+                .build();
     }
 }
