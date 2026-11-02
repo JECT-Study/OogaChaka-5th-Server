@@ -114,7 +114,7 @@ class AuthSecurityWebMvcTest {
         mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer TEST_ONLY_ACCESS")
                 .contentType("application/json").content("{\"refreshToken\":\"TEST_ONLY_REFRESH\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SUCCESS"));
-        org.mockito.Mockito.verify(tokens).logout(org.mockito.ArgumentMatchers.eq(42L),
+        org.mockito.Mockito.verify(tokens).logout(
             org.mockito.ArgumentMatchers.any(JwtClaims.class), org.mockito.ArgumentMatchers.eq("TEST_ONLY_REFRESH"));
         mvc.perform(get("/api/test/denied").header("Authorization", "Bearer TEST_ONLY_ACCESS"))
             .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));

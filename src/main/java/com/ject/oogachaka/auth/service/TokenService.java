@@ -33,9 +33,9 @@ public class TokenService {
         return TokenResponse.from(next);
     }
 
-    public void logout(Long userId, JwtClaims access, String refreshToken) {
+    public void logout(JwtClaims access, String refreshToken) {
         JwtClaims refresh = tokens.validate(refreshToken, TokenType.REFRESH);
-        if (!userId.equals(access.userId()) || !userId.equals(refresh.userId()) || access.type() != TokenType.ACCESS) {
+        if (!access.userId().equals(refresh.userId()) || access.type() != TokenType.ACCESS) {
             throw new BusinessException(ErrorCode.AUTH_TOKEN_INVALID);
         }
         tokenStore.logout(refresh, access);

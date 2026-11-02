@@ -63,7 +63,7 @@ class TokenServiceTest {
     @Test
     void logoutDeletesRefreshAndBlacklistsCurrentAccess() {
         TokenPair pair = jwt.issuePair(42L);
-        service.logout(42L, pair.access().claims(), pair.refresh().value());
+        service.logout(pair.access().claims(), pair.refresh().value());
         verify(store).logout(pair.refresh().claims(), pair.access().claims());
     }
 
@@ -71,7 +71,7 @@ class TokenServiceTest {
     void cannotLogoutAnotherUsersRefreshOrUseAccessAsRefresh() {
         TokenPair pair = jwt.issuePair(42L);
         TokenPair other = jwt.issuePair(99L);
-        assertThatThrownBy(() -> service.logout(42L, pair.access().claims(), other.refresh().value()))
+        assertThatThrownBy(() -> service.logout(pair.access().claims(), other.refresh().value()))
             .isInstanceOfSatisfying(BusinessException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AUTH_TOKEN_INVALID));
         assertThatThrownBy(() -> service.refresh(pair.access().value())).isInstanceOf(BusinessException.class);

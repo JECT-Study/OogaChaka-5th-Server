@@ -16,7 +16,6 @@ import com.ject.oogachaka.global.response.code.ErrorCode;
 import jakarta.validation.Valid;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -55,10 +54,9 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@AuthenticationPrincipal Long userId,
-        @RequestAttribute(JwtAuthenticationFilter.ACCESS_CLAIMS_ATTRIBUTE) JwtClaims access,
+    public ApiResponse<Void> logout(@RequestAttribute(JwtAuthenticationFilter.ACCESS_CLAIMS_ATTRIBUTE) JwtClaims access,
         @Valid @RequestBody RefreshTokenRequest request) {
-        tokenService.logout(userId, access, request.refreshToken());
+        tokenService.logout(access, request.refreshToken());
         return ApiResponse.success();
     }
 }
