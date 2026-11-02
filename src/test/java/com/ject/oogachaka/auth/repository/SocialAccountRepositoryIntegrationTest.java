@@ -1,5 +1,6 @@
 package com.ject.oogachaka.auth.repository;
 
+import static com.ject.oogachaka.global.crypto.TestCryptoKeys.dummyKey;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -84,6 +85,12 @@ class SocialAccountRepositoryIntegrationTest {
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
+        registry.add("spring.flyway.user", MYSQL::getUsername);
+        registry.add("spring.flyway.password", MYSQL::getPassword);
+        registry.add("app.crypto.active-version", () -> "v1");
+        registry.add("app.crypto.aes-keys.v1", () -> dummyKey(1));
+        registry.add("app.crypto.hmac-social-id-key", () -> dummyKey(2));
+        registry.add("app.crypto.hmac-device-token-key", () -> dummyKey(3));
     }
 
     @BeforeEach
