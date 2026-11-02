@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 
+/** 외부 제공자·DB·Redis를 목 객체로 대체해 인가 URL 생성과 로그인 처리 순서를 검증한다. */
 class SocialLoginServiceTest {
 
     private static final String STATE = "s".repeat(43);
@@ -57,8 +58,10 @@ class SocialLoginServiceTest {
         service = new SocialLoginService(properties, states, hmac, accounts, tokens, List.of(client));
     }
 
+    // 로그인 시도별 검증에 쓸 verifier 원문은 서버 저장소에만 전달하고, 인가 URL에는 state와 S256 해시를 넣어야 한다.
+    // 콜백 URL·scope의 인코딩이 유지되고 client secret과 verifier 원문이 인가 URL에 노출되지 않는지 확인한다.
     @Test
-    void authorizationUsesRandomStateAndServerSideS256Verifier() throws Exception {
+    void authorizationIncludesS256ChallengeAndKeepsVerifierServerSide() throws Exception {
         AuthorizationResponse response = service.authorize(AuthProvider.GOOGLE);
         ArgumentCaptor<OAuthState> captured = ArgumentCaptor.forClass(OAuthState.class);
         verify(states).save(eq(response.state()), captured.capture());
@@ -73,6 +76,8 @@ class SocialLoginServiceTest {
         assertThat(query).contains("redirect_uri=https://app.example/callback?next=/home", "scope=openid profile email");
     }
 
+    // 가입 저장이 UNIQUE 경합으로 실패한 상황을 목 객체로 재현해 기존 승자 계정을 재조회하는지 확인한다.
+    // 신규 가입으로 응답하지 않고 승자의 사용자 ID로 토큰 발급을 요청해야 한다. 실제 동시성과 롤백은 MySQL 통합 테스트 범위다.
     @Test
     void registrationRaceQueriesWinnerAfterFailedTransaction() {
         prepareLogin();
@@ -84,6 +89,7 @@ class SocialLoginServiceTest {
         verify(tokens).issue(42L);
     }
 
+    // state 검증이 실패하면 AUTH_STATE_INVALID로 중단하고 제공자 조회·해시 생성·DB 처리·토큰 발급을 시작하지 않아야 한다.
     @Test
     void invalidStateStopsBeforeProviderDatabaseOrTokens() {
         when(states.consume(STATE, AuthProvider.GOOGLE)).thenThrow(new BusinessException(ErrorCode.AUTH_STATE_INVALID));

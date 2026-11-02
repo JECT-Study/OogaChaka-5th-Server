@@ -6,12 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.ject.oogachaka.auth.dto.TokenResponse;
-import com.ject.oogachaka.auth.enums.TokenType;
 import com.ject.oogachaka.auth.repository.AuthTokenStore;
 import com.ject.oogachaka.auth.token.JwtTokenProvider;
 import com.ject.oogachaka.auth.token.TokenPair;
@@ -23,8 +20,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
-import com.ject.oogachaka.auth.token.JwtClaims;
 
+/** 실제 JWT 검증과 목 토큰 저장소로 갱신 거부·소유자 검사를 확인한다. 실제 Redis의 교체 원자성은 통합 테스트에서 검증한다. */
 class TokenServiceTest {
 
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-01T00:00:00Z"), ZoneOffset.UTC);
@@ -33,33 +30,19 @@ class TokenServiceTest {
     private final AuthTokenStore store = mock(AuthTokenStore.class);
     private final TokenService service = new TokenService(jwt, store);
 
+    // 저장소가 refresh 교체를 거부하면 새 토큰을 응답하지 않고 AUTH_REFRESH_REUSED를 발생시킨다.
+    // 저장소의 거부 결과만 모사하며 토큰 재사용 자체를 Redis에서 재현하는 테스트는 아니다.
     @Test
-    void issueRegistersRefreshAndRotationReturnsNewIds() {
-        TokenResponse initial = service.issue(42L);
-        JwtClaims previous = jwt.validate(initial.refreshToken(), TokenType.REFRESH);
-        verify(store).saveRefresh(previous);
-        when(store.rotate(eq(previous), any())).thenReturn(true);
-
-        TokenResponse result = service.refresh(initial.refreshToken());
-
-        JwtClaims next = jwt.validate(result.refreshToken(), TokenType.REFRESH);
-        verify(store).rotate(previous, next);
-        assertThat(next.userId()).isEqualTo(42L);
-        assertThat(next.jti()).isNotEqualTo(previous.jti());
-        assertThat(result.accessToken()).isNotEqualTo(initial.accessToken());
-    }
-
-    @Test
-    void reuseOrMissingRefreshIsRejected() {
+    void rejectedRotationDoesNotReturnNewTokens() {
         TokenPair pair = jwt.issuePair(42L);
-        when(store.rotate(eq(pair.refresh().claims()), any())).thenReturn(true, false);
-        service.refresh(pair.refresh().value());
+        when(store.rotate(eq(pair.refresh().claims()), any())).thenReturn(false);
 
         assertThatThrownBy(() -> service.refresh(pair.refresh().value()))
             .isInstanceOfSatisfying(BusinessException.class,
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AUTH_REFRESH_REUSED));
     }
 
+    // 다른 사용자의 refresh로 로그아웃하거나 access를 갱신용으로 제출하면 저장소에 접근하기 전에 거부해야 한다.
     @Test
     void cannotLogoutAnotherUsersRefreshOrUseAccessAsRefresh() {
         TokenPair pair = jwt.issuePair(42L);

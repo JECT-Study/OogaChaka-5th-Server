@@ -50,7 +50,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
 
-/** 실제 MySQL 트랜잭션에서 가입 실패 롤백과 동시 최초 가입을 검증한다. */
+/** Docker의 실제 MySQL과 운영 서비스로 가입 트랜잭션을 검증한다. 소셜 제공자·Redis·토큰 발급은 목 객체로 대체한다. */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate", showSql = false)
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
@@ -95,6 +95,8 @@ class SocialAccountRepositoryIntegrationTest {
         users.deleteAllInBatch();
     }
 
+    // 기존 소셜 계정과 중복되는 계정을 새 사용자와 같은 트랜잭션에서 저장해 UNIQUE 위반을 발생시킨다.
+    // 새 사용자 생성까지 롤백되고 기존 사용자의 계정만 남아 다시 조회되는지 확인한다.
     @Test
     void uniqueFailureRollsBackNewUserBeforeWinnerIsReloaded() {
         var winner = accounts.findOrCreate(AuthProvider.GOOGLE, hash(), "승자", null);
@@ -110,6 +112,8 @@ class SocialAccountRepositoryIntegrationTest {
         assertThat(socialAccounts.count()).isEqualTo(1);
     }
 
+    // 동일한 소셜 ID의 최초 로그인을 두 스레드에서 시작해도 두 응답이 같은 사용자 ID를 가리켜야 한다.
+    // 신규 가입 응답은 하나뿐이며, DB에 사용자와 소셜 계정이 각각 한 건만 남는지 확인한다.
     @Test
     void concurrentFirstLoginsReturnOneNewUserAndLeaveNoOrphanUser() throws Exception {
         OAuthProperties properties = mock(OAuthProperties.class);

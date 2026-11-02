@@ -20,6 +20,7 @@ import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+/** Redis를 목 객체로 대체해 state 저장 실패·조회 장애의 오류 처리를 확인한다. 실제 일회성 소비는 Redis 통합 테스트에서 확인한다. */
 class OAuthStateStoreTest {
 
     private static final String STATE = "s".repeat(43);
@@ -36,6 +37,7 @@ class OAuthStateStoreTest {
         when(properties.getStateTtl()).thenReturn(Duration.ofMinutes(5));
     }
 
+    // Redis 저장 결과가 false 또는 null이면 인가 URL 발급을 계속하지 않도록 AUTH_STORE_UNAVAILABLE을 발생시킨다.
     @ParameterizedTest
     @NullSource
     @ValueSource(booleans = false)
@@ -46,6 +48,7 @@ class OAuthStateStoreTest {
                 exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AUTH_STORE_UNAVAILABLE));
     }
 
+    // state 조회 중 Redis 연결이 끊기면 AUTH_STORE_UNAVAILABLE로 중단하고 드라이버 예외 원인을 외부에 전달하지 않는다.
     @Test
     void redisFailureIsSanitizedAndDoesNotAcceptState() {
         when(values.getAndDelete(AuthRedisKeys.state(STATE)))

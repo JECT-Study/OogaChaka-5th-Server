@@ -30,7 +30,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-/** 실제 Redis에서 토큰 갱신 경합, 기기별 로그아웃, state 재사용 차단을 검증한다. */
+/** Docker의 실제 Redis에서 Lua 토큰 교체·로그아웃과 GETDEL 일회성 소비를 검증한다. 기본 test 실행에는 포함하지 않는다. */
 @Testcontainers
 class AuthRedisIntegrationTest {
 
@@ -58,6 +58,8 @@ class AuthRedisIntegrationTest {
         }
     }
 
+    // 동일한 refresh로 동시에 두 번 교체하면 하나만 성공하며, 이전 refresh로는 다시 교체할 수 없어야 한다.
+    // 승자의 refresh만 저장되고 유효기간이 설정되는지 실제 Redis 키와 TTL로 확인한다.
     @Test
     void parallelRotationHasOneWinnerAndOldRefreshCannotBeReused() throws Exception {
         AuthTokenStore store = new AuthTokenStore(redis, clock);
@@ -85,6 +87,8 @@ class AuthRedisIntegrationTest {
         }
     }
 
+    // 한 기기를 로그아웃하면 해당 refresh는 삭제되고 현재 access는 남은 수명 동안 차단되어야 한다.
+    // 같은 사용자의 다른 기기에서 발급한 토큰은 유지되는지 확인한다.
     @Test
     void logoutRevokesRefreshAndOnlyCurrentAccessWhileOtherDeviceSurvives() {
         AuthTokenStore store = new AuthTokenStore(redis, clock);
@@ -102,6 +106,8 @@ class AuthRedisIntegrationTest {
             .isBetween(1790L, 1800L);
     }
 
+    // state에 5분 TTL이 설정되고 한 번 소비한 state를 재사용할 수 없는지 확인한다.
+    // 다른 제공자로 제출한 state도 폐기되어 어느 제공자로도 다시 사용할 수 없어야 한다.
     @Test
     void stateTtlAndGetdelPreventReplayAndProviderMixup() {
         OAuthStateStore states = new OAuthStateStore(redis, new OAuthProperties(Duration.ofMinutes(5),

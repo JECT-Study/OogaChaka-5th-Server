@@ -17,12 +17,15 @@ import java.util.Date;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
+/** 고정 시계와 테스트 키로 JWT 발급 규칙, 위조·만료·필수 클레임 검증을 확인한다. 외부 서버를 사용하지 않는다. */
 class JwtTokenProviderTest {
 
     private static final Instant NOW = Instant.parse("2026-11-01T00:00:00Z");
     private final JwtProperties properties = new JwtProperties(dummyKey(4), Duration.ofMinutes(30), Duration.ofDays(14), "oogachaka");
     private final JwtTokenProvider provider = new JwtTokenProvider(properties, clockAt(NOW));
 
+    // 발급한 access·refresh를 다시 검증해 사용자 ID, 발급 시각, 각 수명과 서로 다른 jti가 유지되는지 확인한다.
+    // 토큰 묶음을 문자열로 출력해도 JWT 원문이 드러나지 않아야 한다.
     @Test
     void issuesRequiredClaimsAndIndependentAccessRefreshIds() {
         TokenPair pair = provider.issuePair(42L);
@@ -37,6 +40,7 @@ class JwtTokenProviderTest {
         assertThat(pair.toString()).doesNotContain(pair.access().value(), pair.refresh().value());
     }
 
+    // 현재 시각이 access의 만료 시각과 정확히 같으면 AUTH_TOKEN_EXPIRED로 거부한다. 만료 이후의 유예를 허용하지 않는다.
     @Test
     void rejectsExpiredTokenWithDistinctCodeIncludingExactExpiry() {
         String token = provider.issuePair(42L).access().value();
@@ -45,6 +49,7 @@ class JwtTokenProviderTest {
         assertError(() -> future.validate(token, TokenType.ACCESS), ErrorCode.AUTH_TOKEN_EXPIRED);
     }
 
+    // 다른 서버가 현재보다 5초 앞서 발급한 토큰은 허용하고, 6초 앞서 발급한 토큰은 AUTH_TOKEN_INVALID로 거부한다.
     @Test
     void allowsFiveSecondsOfIssuedAtClockSkewButRejectsMore() {
         JwtTokenProvider fiveSecondsAhead = new JwtTokenProvider(properties, clockAt(NOW.plusSeconds(5)));
@@ -56,6 +61,7 @@ class JwtTokenProviderTest {
             ErrorCode.AUTH_TOKEN_INVALID);
     }
 
+    // 사용자 ID를 고친 payload에 기존 서명을 붙이거나 다른 키로 서명한 JWT는 모두 AUTH_TOKEN_INVALID로 거부한다.
     @Test
     void rejectsTamperedPayloadAndOtherSigningKey() {
         String token = provider.issuePair(42L).access().value();
@@ -69,6 +75,8 @@ class JwtTokenProviderTest {
         assertError(() -> provider.validate(other.issuePair(42L).access().value(), TokenType.ACCESS), ErrorCode.AUTH_TOKEN_INVALID);
     }
 
+    // refresh를 access로 사용하거나 발급자·만료 시각·양수 사용자 ID 조건을 어긴 JWT는 서명이 맞아도 거부한다.
+    // JWT 형식 자체가 깨진 문자열도 같은 AUTH_TOKEN_INVALID로 처리한다.
     @Test
     void rejectsWrongTypeIssuerMissingExpiryAndNonpositiveSubject() {
         assertError(() -> provider.validate(provider.issuePair(42L).refresh().value(), TokenType.ACCESS), ErrorCode.AUTH_TOKEN_INVALID);
