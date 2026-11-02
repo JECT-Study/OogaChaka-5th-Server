@@ -3,7 +3,6 @@ package com.ject.oogachaka.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -60,7 +59,6 @@ class SocialLoginServiceTest {
 
     @Test
     void authorizationUsesRandomStateAndServerSideS256Verifier() throws Exception {
-        when(states.save(anyString(), any())).thenReturn(true);
         AuthorizationResponse response = service.authorize(AuthProvider.GOOGLE);
         ArgumentCaptor<OAuthState> captured = ArgumentCaptor.forClass(OAuthState.class);
         verify(states).save(eq(response.state()), captured.capture());

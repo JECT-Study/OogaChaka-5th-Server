@@ -17,10 +17,13 @@ public class OAuthStateStore {
     private final StringRedisTemplate redis;
     private final OAuthProperties properties;
 
-    public boolean save(String state, OAuthState value) {
+    public void save(String state, OAuthState value) {
         try {
-            return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(AuthRedisKeys.state(state),
-                value.provider().name() + ":" + value.verifier(), properties.getStateTtl()));
+            Boolean stored = redis.opsForValue().setIfAbsent(AuthRedisKeys.state(state),
+                value.provider().name() + ":" + value.verifier(), properties.getStateTtl());
+            if (!Boolean.TRUE.equals(stored)) {
+                throw new BusinessException(ErrorCode.AUTH_STORE_UNAVAILABLE);
+            }
         } catch (DataAccessException exception) {
             throw new BusinessException(ErrorCode.AUTH_STORE_UNAVAILABLE);
         }

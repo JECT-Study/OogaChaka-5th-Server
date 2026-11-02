@@ -58,9 +58,7 @@ public class SocialLoginService {
         SocialLoginClient client = getClient(provider);
         String state = randomValue();
         String verifier = client.supportsPkce() ? randomValue() : "";
-        if (!stateStore.save(state, new OAuthState(provider, verifier))) {
-            throw new BusinessException(ErrorCode.AUTH_STORE_UNAVAILABLE);
-        }
+        stateStore.save(state, new OAuthState(provider, verifier));
         UriComponentsBuilder uri = UriComponentsBuilder.fromUri(settings.getAuthorizationUri())
             .queryParam("response_type", "code").queryParam("client_id", "{clientId}")
             .queryParam("redirect_uri", "{redirectUri}").queryParam("state", state);

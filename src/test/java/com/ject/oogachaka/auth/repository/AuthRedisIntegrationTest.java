@@ -107,11 +107,11 @@ class AuthRedisIntegrationTest {
         OAuthStateStore states = new OAuthStateStore(redis, new OAuthProperties(Duration.ofMinutes(5),
             Duration.ofSeconds(3), Duration.ofSeconds(5), Map.of()));
         String state = "s".repeat(43);
-        assertThat(states.save(state, new OAuthState(AuthProvider.GOOGLE, "v".repeat(43)))).isTrue();
+        states.save(state, new OAuthState(AuthProvider.GOOGLE, "v".repeat(43)));
         assertThat(redis.getExpire(AuthRedisKeys.state(state), TimeUnit.SECONDS)).isBetween(290L, 300L);
         assertThat(states.consume(state, AuthProvider.GOOGLE).verifier()).isEqualTo("v".repeat(43));
         assertThatThrownBy(() -> states.consume(state, AuthProvider.GOOGLE)).isInstanceOf(BusinessException.class);
-        assertThat(states.save(state, new OAuthState(AuthProvider.KAKAO, "v".repeat(43)))).isTrue();
+        states.save(state, new OAuthState(AuthProvider.KAKAO, "v".repeat(43)));
         assertThatThrownBy(() -> states.consume(state, AuthProvider.GOOGLE)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> states.consume(state, AuthProvider.KAKAO)).isInstanceOf(BusinessException.class);
     }
