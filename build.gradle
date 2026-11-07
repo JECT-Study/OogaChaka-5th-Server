@@ -28,6 +28,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'com.github.ulisesbocchio:jasypt-spring-boot-starter:4.0.4'
+    // Swagger UI(/swagger-ui/index.html)와 OpenAPI 문서(/v3/api-docs)를 생성한다. 3.2.0은 Spring Boot 4.1.2 기준으로 빌드됐다.
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0'
     // [검토] 직접 JWT 포맷·서명 파서를 작성하지 않고 JJWT의 공개 생성·검증 API를 사용한다. 버전은 이 브랜치에서 선택한 고정값이다.
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
     // [검토] JJWT API가 실행 시 사용할 실제 구현이다. 구현 클래스에 직접 의존하지 않도록 runtimeOnly로 둔다.
