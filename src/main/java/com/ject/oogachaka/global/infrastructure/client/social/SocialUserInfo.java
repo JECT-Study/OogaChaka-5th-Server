@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public class SocialUserInfo {
+    // 외부에서 검증된 원본 소셜 ID다. 이 객체에서 HMAC 입력으로만 사용하고 DB·Redis에는 원문을 보관하지 않는다.
     private final String providerUserId;
     private final String nickname;
     private final String email;
