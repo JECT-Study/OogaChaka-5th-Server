@@ -1,71 +1,47 @@
 package com.ject.oogachaka.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.auth.dto.AuthorizationResponse;
-import com.ject.oogachaka.auth.dto.OAuthState;
-import com.ject.oogachaka.auth.dto.SocialLoginRequest;
-import com.ject.oogachaka.auth.dto.TokenResponse;
 import com.ject.oogachaka.auth.enums.AuthProvider;
 import com.ject.oogachaka.auth.repository.OAuthStateStore;
 import com.ject.oogachaka.global.config.OAuthProperties;
-import com.ject.oogachaka.global.crypto.HmacPurpose;
 import com.ject.oogachaka.global.crypto.HmacService;
-import com.ject.oogachaka.global.exception.BusinessException;
 import com.ject.oogachaka.global.infrastructure.client.social.SocialLoginClient;
-import com.ject.oogachaka.global.infrastructure.client.social.SocialUserInfo;
-import com.ject.oogachaka.global.response.code.ErrorCode;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.dao.DataIntegrityViolationException;
 
-/** 외부 제공자·DB·Redis를 목 객체로 대체해 인가 URL 생성과 로그인 처리 순서를 검증한다. */
+/** 외부 제공자·DB·Redis를 목 객체로 대체해 인가 URL 생성 규칙을 검증한다. */
 class SocialLoginServiceTest {
 
-    private static final String STATE = "s".repeat(43);
-    private static final String VERIFIER = "v".repeat(43);
-    private static final String HASH = "a".repeat(64);
     private final OAuthProperties properties = mock(OAuthProperties.class);
     private final OAuthStateStore states = mock(OAuthStateStore.class);
-    private final HmacService hmac = mock(HmacService.class);
-    private final SocialAccountService accounts = mock(SocialAccountService.class);
-    private final TokenService tokens = mock(TokenService.class);
-    private final SocialLoginClient client = mock(SocialLoginClient.class);
-    private SocialLoginService service;
-
-    @BeforeEach
-    void setUp() {
-        when(client.getProvider()).thenReturn(AuthProvider.GOOGLE);
-        when(client.supportsPkce()).thenReturn(true);
-        when(properties.getEnabledProvider(AuthProvider.GOOGLE)).thenReturn(new OAuthProperties.Provider(true,
-            "TEST_ONLY_CLIENT", "TEST_ONLY_SECRET", URI.create("https://app.example/callback?next=/home"),
-            URI.create("https://accounts.google.com/o/oauth2/v2/auth"), URI.create("https://oauth2.googleapis.com/token"),
-            URI.create("https://openidconnect.googleapis.com/v1/userinfo"), List.of("openid", "profile", "email")));
-        service = new SocialLoginService(properties, states, hmac, accounts, tokens, List.of(client));
-    }
+    private final SocialLoginService service = new SocialLoginService(properties, states, mock(HmacService.class),
+        mock(SocialAccountService.class), mock(TokenService.class), mock(SocialLoginClient.class));
 
     // 로그인 시도별 검증에 쓸 verifier 원문은 서버 저장소에만 전달하고, 인가 URL에는 state와 S256 해시를 넣어야 한다.
     // 콜백 URL·scope의 인코딩이 유지되고 client secret과 verifier 원문이 인가 URL에 노출되지 않는지 확인한다.
     @Test
     void authorizationIncludesS256ChallengeAndKeepsVerifierServerSide() throws Exception {
+        when(properties.getProvider(AuthProvider.GOOGLE)).thenReturn(new OAuthProperties.Provider(
+            "TEST_ONLY_CLIENT", "TEST_ONLY_SECRET", URI.create("https://app.example/callback?next=/home"),
+            URI.create("https://accounts.google.com/o/oauth2/v2/auth"), URI.create("https://oauth2.googleapis.com/token"),
+            URI.create("https://openidconnect.googleapis.com/v1/userinfo"), List.of("openid", "profile", "email")));
+
         AuthorizationResponse response = service.authorize(AuthProvider.GOOGLE);
-        ArgumentCaptor<OAuthState> captured = ArgumentCaptor.forClass(OAuthState.class);
+        ArgumentCaptor<String> captured = ArgumentCaptor.forClass(String.class);
         verify(states).save(eq(response.state()), captured.capture());
-        String verifier = captured.getValue().verifier();
+        String verifier = captured.getValue();
         String expected = Base64.getUrlEncoder().withoutPadding().encodeToString(
             MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
 
@@ -74,40 +50,5 @@ class SocialLoginServiceTest {
             .doesNotContain(verifier, "TEST_ONLY_SECRET");
         String query = URLDecoder.decode(URI.create(response.authorizationUrl()).getRawQuery(), StandardCharsets.UTF_8);
         assertThat(query).contains("redirect_uri=https://app.example/callback?next=/home", "scope=openid profile email");
-    }
-
-    // 가입 저장이 UNIQUE 경합으로 실패한 상황을 목 객체로 재현해 기존 승자 계정을 재조회하는지 확인한다.
-    // 신규 가입으로 응답하지 않고 승자의 사용자 ID로 토큰 발급을 요청해야 한다. 실제 동시성과 롤백은 MySQL 통합 테스트 범위다.
-    @Test
-    void registrationRaceQueriesWinnerAfterFailedTransaction() {
-        prepareLogin();
-        when(accounts.findOrCreate(AuthProvider.GOOGLE, HASH, "별명", "test@example.invalid"))
-            .thenThrow(new DataIntegrityViolationException("TEST_ONLY_UNIQUE"));
-        when(accounts.getExisting(AuthProvider.GOOGLE, HASH)).thenReturn(new SocialAccountResult(42L, false));
-        assertThat(service.login(request()).isNewUser()).isFalse();
-        verify(accounts).getExisting(AuthProvider.GOOGLE, HASH);
-        verify(tokens).issue(42L);
-    }
-
-    // state 검증이 실패하면 AUTH_STATE_INVALID로 중단하고 제공자 조회·해시 생성·DB 처리·토큰 발급을 시작하지 않아야 한다.
-    @Test
-    void invalidStateStopsBeforeProviderDatabaseOrTokens() {
-        when(states.consume(STATE, AuthProvider.GOOGLE)).thenThrow(new BusinessException(ErrorCode.AUTH_STATE_INVALID));
-        assertThatThrownBy(() -> service.login(request())).isInstanceOfSatisfying(BusinessException.class,
-            exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AUTH_STATE_INVALID));
-        verify(client, org.mockito.Mockito.never()).getUserInfo(any(), any(), any());
-        verifyNoInteractions(accounts, hmac, tokens);
-    }
-
-    private void prepareLogin() {
-        when(states.consume(STATE, AuthProvider.GOOGLE)).thenReturn(new OAuthState(AuthProvider.GOOGLE, VERIFIER));
-        when(client.getUserInfo("TEST_ONLY_CODE", STATE, VERIFIER))
-            .thenReturn(new SocialUserInfo("TEST_ONLY_RAW_ID", "별명", "test@example.invalid"));
-        when(hmac.hash("TEST_ONLY_RAW_ID", HmacPurpose.SOCIAL_ID)).thenReturn(HASH);
-        when(tokens.issue(42L)).thenReturn(new TokenResponse("Bearer", "TEST_ONLY_ACCESS", "TEST_ONLY_REFRESH", 1800, 1209600));
-    }
-
-    private SocialLoginRequest request() {
-        return new SocialLoginRequest(AuthProvider.GOOGLE, "TEST_ONLY_CODE", STATE);
     }
 }

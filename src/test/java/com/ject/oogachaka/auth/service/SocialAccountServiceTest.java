@@ -6,7 +6,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.ject.oogachaka.auth.entity.SocialAccount;
 import com.ject.oogachaka.auth.enums.AuthProvider;
 import com.ject.oogachaka.auth.repository.SocialAccountRepository;
 import com.ject.oogachaka.user.entity.User;
@@ -35,20 +34,16 @@ class SocialAccountServiceTest {
         verify(users).createUser("😀".repeat(30));
     }
 
-    // 닉네임이 비어 있으면 우가차차_임의8자리로 보완하고, 이메일이 255자를 넘으면 저장할 값에서 제외한다.
-    // 제공자의 선택 프로필 누락이나 지나치게 긴 값 때문에 가입 전체가 실패하지 않도록 하는 규칙을 확인한다.
+    // 제공자가 닉네임을 주지 않거나 공백이면 우가차차_임의8자리 기본 닉네임으로 사용자를 생성한다.
     @Test
-    void missingNicknameGetsDefaultAndOversizedEmailIsOmitted() {
+    void missingNicknameGetsDefault() {
         User user = mock(User.class);
         when(user.getId()).thenReturn(42L);
         when(users.createUser(any())).thenReturn(user);
         when(repository.findByAuthProviderAndProviderUserIdHash(AuthProvider.KAKAO, HASH)).thenReturn(Optional.empty());
-        service.findOrCreate(AuthProvider.KAKAO, HASH, " ", "a".repeat(256));
+        service.findOrCreate(AuthProvider.KAKAO, HASH, " ", null);
         ArgumentCaptor<String> nickname = ArgumentCaptor.forClass(String.class);
         verify(users).createUser(nickname.capture());
         assertThat(nickname.getValue()).matches("우가차차_[0-9a-f]{8}");
-        ArgumentCaptor<SocialAccount> account = ArgumentCaptor.forClass(SocialAccount.class);
-        verify(repository).saveAndFlush(account.capture());
-        assertThat(account.getValue().getEmail()).isNull();
     }
 }

@@ -10,70 +10,49 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
-/** 제공자 응답/예외 원문을 요청 로그와 예외 원인 체인에 전달하지 않는 외부 통신 경계 */
+/**
+ * 제공자별 클라이언트가 공유하는 HTTP 호출 경계다. 인가 코드를 제공자 토큰으로 교환하고 그 토큰으로 프로필을 조회한다.
+ * 제공자 쪽 실패(4xx·5xx·타임아웃·잘못된 응답)는 모두 AUTH_SOCIAL_LOGIN_FAILED로 처리한다.
+ */
 @Component
 @RequiredArgsConstructor
 public class SocialOAuthTransport {
 
-    private static final int MAX_RESPONSE_BYTES = 65_536;
     private final RestClient socialRestClient;
-    private final ObjectMapper objectMapper;
 
     public String exchangeToken(URI uri, MultiValueMap<String, String> form) {
         JsonNode response = read(socialRestClient.post().uri(uri).contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .accept(MediaType.APPLICATION_JSON).body(new SensitiveForm(form)), true);
+            .accept(MediaType.APPLICATION_JSON).body(new SensitiveForm(form)).retrieve());
+
+        // 네이버는 코드 교환 실패도 HTTP 200에 error를 담아 응답한다.
         if (response.hasNonNull("error")) {
-            throw new BusinessException(ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED);
-        }
-        String token = requiredText(response, "access_token");
-        if (token.chars().anyMatch(Character::isISOControl)) {
             throw failed();
         }
-        return token;
+
+        return requiredText(response, "access_token");
     }
 
     public JsonNode getUserInfo(URI uri, String token) {
         return read(socialRestClient.get().uri(uri).accept(MediaType.APPLICATION_JSON)
-            .headers(headers -> headers.setBearerAuth(token)), false);
+            .headers(headers -> headers.setBearerAuth(token)).retrieve());
     }
 
-    private JsonNode read(RestClient.RequestHeadersSpec<?> request, boolean tokenExchange) {
+    // 원래 예외는 제공자 응답 원문을 담을 수 있어 cause로 넘기지 않는다.
+    private JsonNode read(RestClient.ResponseSpec response) {
         try {
-            return request.exchange((outgoing, incoming) -> {
-                if (!incoming.getStatusCode().is2xxSuccessful()) {
-                    if (incoming.getStatusCode().is5xxServerError() || incoming.getStatusCode().value() == 429) {
-                        throw new BusinessException(ErrorCode.AUTH_PROVIDER_UNAVAILABLE);
-                    }
-                    // 서버가 관리하는 제공자 토큰의 userinfo 실패와 인가 코드 교환 거절을 구분한다.
-                    throw new BusinessException(tokenExchange && incoming.getStatusCode().is4xxClientError()
-                        ? ErrorCode.AUTH_SOCIAL_LOGIN_REJECTED : ErrorCode.AUTH_SOCIAL_LOGIN_FAILED);
-                }
-                byte[] body = incoming.getBody().readNBytes(MAX_RESPONSE_BYTES + 1);
-                if (body.length > MAX_RESPONSE_BYTES) {
-                    throw failed();
-                }
-                JsonNode node = objectMapper.readTree(body);
-                if (node == null || !node.isObject()) {
-                    throw failed();
-                }
-                return node;
-            });
-        } catch (JacksonException exception) {
-            throw failed();
+            JsonNode body = response.body(JsonNode.class);
+            if (body == null) {
+                throw failed();
+            }
+            return body;
         } catch (RestClientException exception) {
-            throw new BusinessException(ErrorCode.AUTH_PROVIDER_UNAVAILABLE);
+            throw failed();
         }
     }
 
-    static String optionalText(JsonNode node, String field) {
-        JsonNode value = node.path(field);
-        return value.isString() && !value.asString().isBlank() ? value.asString() : null;
-    }
-
+    // 계정 ID·access_token처럼 없으면 로그인을 이어갈 수 없는 필드를 읽는다.
     static String requiredText(JsonNode node, String field) {
         String value = optionalText(node, field);
         if (value == null) {
@@ -82,11 +61,17 @@ public class SocialOAuthTransport {
         return value;
     }
 
+    // 없음·null·빈 문자열·문자열이 아닌 값을 모두 null로 통일한다.
+    static String optionalText(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isString() && !value.asString().isBlank() ? value.asString() : null;
+    }
+
     static BusinessException failed() {
         return new BusinessException(ErrorCode.AUTH_SOCIAL_LOGIN_FAILED);
     }
 
-    /** RestClient는 DEBUG에서 body.toString()을 출력하므로 폼의 문자열 표현도 가린다. */
+    /** RestClient는 DEBUG에서 body.toString()을 출력하므로 code·secret이 담긴 폼의 문자열 표현만 가린다. */
     private static final class SensitiveForm extends LinkedMultiValueMap<String, String> {
         private SensitiveForm(MultiValueMap<String, String> values) {
             super(values);
