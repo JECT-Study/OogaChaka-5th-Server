@@ -3,10 +3,8 @@
 Java 17을 사용한다. 처음 세팅한다면 아래 [한눈에 보기](#한눈에-보기)와
 [로컬 실행](#로컬-실행)만 순서대로 따라 하면 된다.
 
-현재 `feature/5-65-jasypt-config`에서 준비할 것은 DB·Flyway 접속정보, AES/HMAC 키,
-Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 후속 브랜치용 설정이므로
-지금 모든 값을 채울 필요는 없다. Redis 설정을 적는 것만으로 Redis 서버가 실행되지는 않으며,
-현재 브랜치에는 Redis 연동 의존성과 사용 코드가 없다.
+앱 시작에 필요한 것은 DB·Flyway 접속정보, AES/HMAC 키, JWT 서명 키, Jasypt 비밀번호다.
+로그인·갱신·로그아웃에는 Redis(6.2 이상)가 실행 중이어야 하며, 소셜 로그인은 사용할 제공자의 client-id를 채워야 동작한다.
 
 ## 한눈에 보기
 
@@ -39,8 +37,7 @@ Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 �
 서버와 CI는 아래 환경변수로 주입한다. 로컬 개발은 환경변수 대신
 `application-local.properties`에 같은 값을 적는다([로컬 실행](#로컬-실행) 참고).
 
-현재 앱 시작에 필요한 것은 Jasypt 비밀번호와 AES/HMAC 키다. JWT 및 외부 서비스 관련 변수는
-해당 후속 기능을 사용할 때 준비한다. `${변수:기본값}`은 변수를 등록하지 않으면 기본값을 사용하므로,
+앱 시작에는 Jasypt 비밀번호와 AES/HMAC 키, JWT_SECRET이 필요하다. `${변수:기본값}`은 변수를 등록하지 않으면 기본값을 사용하므로,
 일반 설정의 기본값이 환경에 맞는다면 모든 환경변수를 따로 등록할 필요는 없다.
 
 | 환경변수 | 형식과 용도 | 필요 시점 |
@@ -51,18 +48,12 @@ Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 �
 | `HMAC_DEVICE_TOKEN_KEY` | Base64 32바이트 디바이스 토큰 중복 검사 키 | 모든 애플리케이션 시작 |
 | `JWT_SECRET` | 독립된 Base64 서명 키. HS256용 최소 32바이트를 시작 시 검증한다. | 인증 브랜치 |
 | `AES_ACTIVE_VERSION` | 기본 `v1`. 교체 시 새 버전과 키 맵을 함께 설정한다. | 키 교체 |
-| `REDIS_HOST`, `REDIS_PORT`, `REDIS_DATABASE` | 기본 `localhost`, `6379`, `0` | 인증 브랜치 |
-| `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_SSL_ENABLED` | 기본 빈 값/빈 값/`false`. 비밀번호는 `ENC(...)`로 주입한다. | 인증 Redis에 필요할 때 |
-| `JWT_ISSUER` | 기본 `oogachaka` | issuer 변경 |
-| `GOOGLE_OAUTH_ENABLED`, `KAKAO_OAUTH_ENABLED`, `NAVER_OAUTH_ENABLED` | 기본 `false`. 사용할 제공자만 활성화한다. | 인증 브랜치 |
-| `{GOOGLE,KAKAO,NAVER}_CLIENT_ID` | 제공자 콘솔에서 발급한 client ID. 카카오는 REST API 키 | 제공자 활성화 |
+| `REDIS_HOST`, `REDIS_PORT` | 기본 `localhost`, `6379` | 인증 |
+| `REDIS_PASSWORD` | 기본 빈 값. 필요하면 `ENC(...)`로 주입한다. | 비밀번호가 있는 Redis |
+| `{GOOGLE,KAKAO,NAVER}_CLIENT_ID` | 제공자 콘솔에서 발급한 client ID. 카카오는 REST API 키. 비어 있는 제공자는 사용하지 않는다. | 제공자 활성화 |
 | `{GOOGLE,KAKAO,NAVER}_CLIENT_SECRET` | 각 제공자 secret을 암호화한 `ENC(...)`. 카카오에서 secret을 사용하지 않으면 비워 둔다. | 제공자 활성화 |
 | `{GOOGLE,KAKAO,NAVER}_REDIRECT_URI` | 제공자 콘솔에 등록한 프런트 콜백 URI와 정확히 일치 | 제공자 활성화 |
 | `CORS_ALLOWED_ORIGINS` | 쉼표로 구분한 명시적 origin. 기본 Capacitor `capacitor://localhost`, `http://localhost`, `https://localhost` | 웹/앱 환경에 맞게 설정 |
-| `FCM_ENABLED`, `FCM_PROJECT_ID` | 기본 `false`/빈 값. false이면 후속 구현이 Firebase 초기화를 생략한다. | 푸시 브랜치 |
-| `FCM_SERVICE_ACCOUNT_PATH` | 저장소 밖의 서비스 계정 JSON 절대경로 | 파일 방식의 FCM 인증 |
-| `FCM_SERVICE_ACCOUNT_JSON` | JSON 한 줄 또는 그 값을 암호화한 `ENC(...)` | 내용 주입 방식의 FCM 인증 |
-| `GOOGLE_APPLICATION_CREDENTIALS` | 위 두 FCM 설정이 비어 있을 때 Google ADC에서 읽는 외부 JSON 파일 경로 | ADC 인증 |
 
 AES 키와 두 HMAC 키는 디코딩 결과가 모두 서로 달라야 한다. 이전 AES 버전의 키도 HMAC 키와
 같으면 시작에 실패한다. 키 누락, 잘못된 Base64, 32바이트가 아닌 값도 시작에 실패한다.
@@ -324,32 +315,28 @@ WHERE TABLE_SCHEMA = DATABASE()
 `JasyptEncryptorFactory`를 CLI와 `jasyptStringEncryptor` 빈이 공유한다. 알고리즘 설정은 이
 팩토리에 고정되어 있다. 기존 다른 규격의 암호문은 이 도구로 다시 암호화한다.
 
-## 인증 및 후속 푸시 설정 계약
+## 인증 설정 계약
 
 인증 구현은 Redis/jjwt 의존성과 `app.jwt`/`app.oauth`/`app.cors` 바인딩을 제공한다.
 JWT_SECRET 누락·빈 값·Base64 오류·디코딩 후 32바이트 미만 키는 시작 시 거부한다.
 서명 알고리즘은 HS256으로 고정하며 최소 키 길이 기준은
 [JWA의 HMAC 규격](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2)을 따른다.
-Redis는 GETDEL을 지원하는 6.2 이상이어야 한다. 활성 OAuth 제공자는 필수 client ID/secret,
-절대 redirect URI 및 HTTPS 외부 API 주소를 시작 시 검사한다(카카오 secret은 선택).
+Redis는 GETDEL을 지원하는 6.2 이상이어야 한다. OAuth 제공자는 client-id가 비어 있으면 사용하지 않는다.
 구글·카카오 S256 PKCE, 인증 응답 계약, Redis 키/운영 조건 및 제공자별 콘솔 설정은
-[인증 API 가이드](auth-api.md)를 참고한다. Firebase 및 푸시 실행기는 후속 푸시 구현 범위다.
+[인증 API 가이드](auth-api.md)를 참고한다.
 
 | 설정 접두어 | 계약 |
 | --- | --- |
-| `app.jwt` | `secret`, `access-token-ttl=30m`, `refresh-token-ttl=14d`, `issuer` |
+| `app.jwt` | `secret`, `access-token-ttl=30m`, `refresh-token-ttl=14d` |
 | `app.oauth` | `state-ttl=5m`(Redis의 일회성 state), `connect-timeout=3s`, `read-timeout=5s` |
-| `app.oauth.providers.{google,kakao,naver}` | `enabled`, `client-id`, `client-secret`, `redirect-uri`, `authorization-uri`, `token-uri`, `user-info-uri`, `scopes` |
-| `app.cors` | `allowed-origins` 목록, `allow-credentials=true`. 운영 origin과 실제 Capacitor 설정을 일치시킨다. |
-| `app.fcm` | `enabled`, `project-id`, `service-account-path`, `service-account-json`. path/json은 동시에 지정하지 않는다. 둘 다 비어 있으면 ADC를 사용한다. |
-| `app.async.push` | `core-pool-size=2`, `max-pool-size=4`, `queue-capacity=100`, `thread-name-prefix=push-`, `await-termination=30s` |
+| `app.oauth.providers.{google,kakao,naver}` | `client-id`(비어 있으면 미사용), `client-secret`, `redirect-uri`, `authorization-uri`, `token-uri`, `user-info-uri`, `scopes` |
+| `app.cors` | `allowed-origins` 목록. 운영 origin과 실제 Capacitor 설정을 일치시킨다. |
 
 OAuth scope는 앱 콘솔에서 승인된 권한에 맞춰 환경별로 조정한다. 네이버 동의 항목은 콘솔에서
 관리하므로 기본 scopes는 비어 있다. 각 제공자 정보는
 [Google](https://developers.google.com/identity/openid-connect/openid-connect),
 [Kakao](https://developers.kakao.com/docs/en/rest-api/reference),
 [Naver](https://developers.naver.com/docs/login/api/api.md)의 엔드포인트를 기준으로 했다.
-FCM 인증 선택은 [Firebase Admin 설정](https://firebase.google.com/docs/admin/setup)을 따른다.
 
 공통 API 사용 예시:
 
@@ -430,10 +417,8 @@ Secrets 등록과 위 `env` 설정만으로 운영 서버의 환경변수가 자
 키는 `TestCryptoKeys`에서 생성한 테스트 전용 더미 값을 사용한다.
 
 `./gradlew test`는 외부 DB나 별도 서버 없이 단위·MVC 테스트를 실행한다.
-Docker가 없는 환경에서는 이 명령만 실행하고 통합 테스트는 미실행으로 기록한다.
-인증의 동시 토큰 갱신·가입 롤백은 Docker를 준비한 뒤 `./gradlew integrationTest`로 확인한다.
-이 테스트는 격리된 Redis/MySQL과 더미 키를 사용하며 로컬·운영 접속 정보나 Jasypt 비밀번호가 필요하지 않다.
-JPA Converter 주입과 암호문 컬럼 용량 검증은 해당 엔티티 구현 시 추가한다.
+Docker가 필요한 통합 테스트와 전용 실행 작업·의존성은 유지하지 않는다.
+현재 자동 테스트는 실제 Redis/MySQL 동작, JPA Converter 주입, 암호문 컬럼 용량을 검증하지 않는다.
 
 ## Jasypt 선택 근거
 
