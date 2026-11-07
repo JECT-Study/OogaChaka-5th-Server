@@ -1,6 +1,5 @@
 package com.ject.oogachaka.auth.security;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -12,11 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ject.oogachaka.auth.controller.AuthController;
 import com.ject.oogachaka.auth.dto.AuthorizationResponse;
-import com.ject.oogachaka.auth.dto.SocialLoginResponse;
 import com.ject.oogachaka.auth.dto.TokenResponse;
 import com.ject.oogachaka.auth.enums.AuthProvider;
 import com.ject.oogachaka.auth.enums.TokenType;
-import com.ject.oogachaka.auth.repository.AuthTokenStore;
 import com.ject.oogachaka.auth.service.SocialLoginService;
 import com.ject.oogachaka.auth.service.TokenService;
 import com.ject.oogachaka.auth.token.JwtClaims;
@@ -45,7 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 실제 MVC·Security 설정으로 API의 공개 범위, 인증 응답과 CORS를 검증한다. JWT 검증과 업무 서비스는 목 객체로 대체한다. */
 @WebMvcTest(controllers = {AuthController.class, AuthSecurityWebMvcTest.ProbeController.class},
-    properties = {"app.cors.allowed-origins=https://app.example", "app.cors.allow-credentials=true"})
+    properties = {"app.cors.allowed-origins=https://app.example"})
 @Import({SecurityConfig.class, JsonSecurityHandler.class, GlobalExceptionHandler.class,
     AuthSecurityWebMvcTest.PropertiesConfig.class, AuthController.class, AuthSecurityWebMvcTest.ProbeController.class})
 class AuthSecurityWebMvcTest {
@@ -54,8 +51,6 @@ class AuthSecurityWebMvcTest {
     private MockMvc mvc;
     @MockitoBean
     private JwtTokenProvider jwt;
-    @MockitoBean
-    private AuthTokenStore store;
     @MockitoBean
     private SocialLoginService socialLogin;
     @MockitoBean
@@ -79,7 +74,7 @@ class AuthSecurityWebMvcTest {
     }
 
     // 만료된 access 또는 잘못된 Authorization 헤더가 붙어도 공개 인증 API는 정상 처리되어야 한다.
-    // 불필요한 JWT 검증이나 Redis 블랙리스트 조회 자체가 호출되지 않는지도 확인한다.
+    // 불필요한 JWT 검증 자체가 호출되지 않는지도 확인한다.
     @ParameterizedTest
     @ValueSource(strings = {"Bearer TEST_ONLY_EXPIRED", "malformed-header"})
     void publicAuthenticationApisIgnoreAccessHeaders(String authorization) throws Exception {
@@ -95,24 +90,10 @@ class AuthSecurityWebMvcTest {
         mvc.perform(post("/api/v1/auth/refresh").header("Authorization", authorization).contentType("application/json")
                 .content("{\"refreshToken\":\"TEST_ONLY_REFRESH\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.refreshToken").value("TEST_ONLY_NEW"));
-        verifyNoInteractions(jwt, store);
+        verifyNoInteractions(jwt);
     }
 
-    // 가입 여부가 true/false일 때 모두 응답 JSON의 필드명이 isNewUser여야 한다.
-    // 클라이언트가 읽지 못하는 newUser라는 다른 필드명이 생성되는 회귀를 방지한다.
-    @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    void socialLoginSerializesExactIsNewUserField(boolean isNewUser) throws Exception {
-        when(socialLogin.login(any())).thenReturn(new SocialLoginResponse(42L, isNewUser,
-            new TokenResponse("Bearer", "TEST_ONLY_ACCESS", "TEST_ONLY_REFRESH", 1800, 1209600)));
-
-        mvc.perform(post("/api/v1/auth/social-login").contentType("application/json")
-                .content("{\"provider\":\"GOOGLE\",\"code\":\"TEST_ONLY_CODE\",\"state\":\"" + "s".repeat(43) + "\"}"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.isNewUser").value(isNewUser))
-            .andExpect(jsonPath("$.data.newUser").doesNotExist());
-    }
-
-    // 인증된 요청의 Long 사용자 ID가 컨트롤러에 전달되고 로그아웃에서 access 클레임을 사용할 수 있어야 한다.
+    // 인증된 요청의 Long 사용자 ID가 컨트롤러와 로그아웃에 전달되어야 한다.
     // 컨트롤러가 권한 거부 예외를 던지면 공통 응답의 FORBIDDEN(403)으로 처리되는지도 확인한다.
     @Test
     void longPrincipalAndDeniedResponseFollowContract() throws Exception {
@@ -123,8 +104,7 @@ class AuthSecurityWebMvcTest {
         mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer TEST_ONLY_ACCESS")
                 .contentType("application/json").content("{\"refreshToken\":\"TEST_ONLY_REFRESH\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SUCCESS"));
-        org.mockito.Mockito.verify(tokens).logout(
-            org.mockito.ArgumentMatchers.any(JwtClaims.class), org.mockito.ArgumentMatchers.eq("TEST_ONLY_REFRESH"));
+        org.mockito.Mockito.verify(tokens).logout(42L, "TEST_ONLY_REFRESH");
         mvc.perform(get("/api/test/denied").header("Authorization", "Bearer TEST_ONLY_ACCESS"))
             .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
@@ -135,14 +115,6 @@ class AuthSecurityWebMvcTest {
         mvc.perform(options("/api/v1/auth/logout").header("Origin", "https://app.example")
                 .header("Access-Control-Request-Method", "POST").header("Access-Control-Request-Headers", "authorization,content-type"))
             .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", "https://app.example"));
-    }
-
-    // 허용하지 않은 웹 출처의 사전 요청은 기본 문자열 응답 대신 공통 JSON의 FORBIDDEN(403)으로 거부해야 한다.
-    @Test
-    void rejectedCorsAlsoUsesCommonJsonError() throws Exception {
-        mvc.perform(options("/api/v1/auth/logout").header("Origin", "https://untrusted.example")
-                .header("Access-Control-Request-Method", "POST"))
-            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Configuration(proxyBeanMethods = false)

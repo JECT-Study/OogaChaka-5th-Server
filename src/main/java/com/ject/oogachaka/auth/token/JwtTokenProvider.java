@@ -17,12 +17,10 @@ import java.util.Date;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
-/** HS256 서명과 발급자, 토큰 종류, 필수 클레임을 함께 검증한다. */
+/** HS256으로 JWT를 발급하고 서명·만료·토큰 종류를 검증한다. */
 @Component
 public class JwtTokenProvider {
 
-    private static final int MAX_TOKEN_LENGTH = 4096;
-    private static final Duration ISSUED_AT_CLOCK_SKEW = Duration.ofSeconds(5);
     private final JwtProperties properties;
     private final Clock clock;
     private final JwtParser parser;
@@ -30,55 +28,42 @@ public class JwtTokenProvider {
     public JwtTokenProvider(JwtProperties properties, Clock clock) {
         this.properties = properties;
         this.clock = clock;
-        this.parser = Jwts.parser().verifyWith(properties.getSigningKey())
-            .requireIssuer(properties.getIssuer()).clock(() -> Date.from(clock.instant()))
-            .sig().clear().add(Jwts.SIG.HS256).and()
-            .zip().clear().and().build();
+        // 서버 비밀 키로 서명을 검증하고, 만료 검사에도 주입한 시계를 쓴다.
+        this.parser = Jwts.parser().verifyWith(properties.getSigningKey()).clock(() -> Date.from(clock.instant())).build();
     }
 
-    public TokenPair issuePair(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new IllegalArgumentException("양수 userId가 필요합니다.");
-        }
-        Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
-        return new TokenPair(issue(userId, TokenType.ACCESS, now, properties.getAccessTokenTtl()),
-            issue(userId, TokenType.REFRESH, now, properties.getRefreshTokenTtl()));
-    }
-
+    // 호출자가 기대하는 종류까지 검증해 access·refresh가 같은 서명 키를 사용해도 용도를 구분한다.
     public JwtClaims validate(String token, TokenType expectedType) {
-        if (token == null || token.isBlank() || token.length() > MAX_TOKEN_LENGTH) {
-            throw invalidToken();
-        }
         try {
             Claims claims = parser.parseSignedClaims(token).getPayload();
-            Long userId = Long.valueOf(claims.getSubject());
-            Date issuedAt = claims.getIssuedAt();
-            Date expiresAt = claims.getExpiration();
-            String jti = claims.getId();
-            if (userId <= 0 || !userId.toString().equals(claims.getSubject())
-                || !expectedType.getClaim().equals(claims.get("type", String.class))
-                || jti == null || !UUID.fromString(jti).toString().equals(jti)
-                || issuedAt == null || expiresAt == null || !expiresAt.after(issuedAt)
-                || issuedAt.toInstant().isAfter(clock.instant().plus(ISSUED_AT_CLOCK_SKEW))) {
+
+            // 같은 키로 서명한 14일짜리 refresh를 access로 쓰지 못하게 종류를 확인한다.
+            if (!expectedType.getClaim().equals(claims.get("type", String.class))) {
                 throw invalidToken();
             }
-            if (!expiresAt.toInstant().isAfter(clock.instant())) {
-                throw new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED);
-            }
-            return new JwtClaims(userId, jti, expectedType, issuedAt.toInstant(), expiresAt.toInstant());
+
+            return new JwtClaims(Long.valueOf(claims.getSubject()), claims.getId(), expectedType,
+                claims.getIssuedAt().toInstant(), claims.getExpiration().toInstant());
         } catch (ExpiredJwtException exception) {
             throw new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException exception) {
-            // 파서 예외에는 원문/클레임이 포함될 수 있으므로 원인을 전달하지 않는다.
             throw invalidToken();
         }
     }
 
+    public TokenPair issuePair(Long userId) {
+        Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+        return new TokenPair(issue(userId, TokenType.ACCESS, now, properties.getAccessTokenTtl()),
+                issue(userId, TokenType.REFRESH, now, properties.getRefreshTokenTtl()));
+    }
+
+    // access와 refresh에서 공통인 서명·표준 클레임 생성을 한 곳에 둔다.
     private IssuedToken issue(Long userId, TokenType type, Instant now, Duration ttl) {
+        // 발급마다 다른 토큰 ID를 만든다. 같은 사용자도 여러 기기·갱신마다 별도의 Redis 키를 갖게 한다.
         String jti = UUID.randomUUID().toString();
         Instant expiresAt = now.plus(ttl);
         String token = Jwts.builder().subject(userId.toString()).id(jti).claim("type", type.getClaim())
-            .issuer(properties.getIssuer()).issuedAt(Date.from(now)).expiration(Date.from(expiresAt))
+            .issuedAt(Date.from(now)).expiration(Date.from(expiresAt))
             .signWith(properties.getSigningKey(), Jwts.SIG.HS256).compact();
         return new IssuedToken(token, new JwtClaims(userId, jti, type, now, expiresAt));
     }
