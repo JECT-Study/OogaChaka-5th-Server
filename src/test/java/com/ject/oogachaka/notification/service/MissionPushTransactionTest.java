@@ -6,8 +6,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.mission.event.MissionCompletionRequestedEvent;
-import com.ject.oogachaka.notification.repository.FamilyPushRecipientQuery;
-import java.util.Optional;
+import com.ject.oogachaka.family.service.FamilyService;
+import com.ject.oogachaka.user.entity.User;
+import com.ject.oogachaka.user.service.UserService;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -24,7 +25,7 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** DB 없이 Spring의 실제 이벤트/트랜잭션/Async 프록시가 연결되는 경계를 검증한다. */
-class MissionCompletionPushTransactionTest {
+class MissionPushTransactionTest {
 
     private final MissionCompletionRequestedEvent event = new MissionCompletionRequestedEvent(10L, 3L, "책 읽기");
 
@@ -32,22 +33,22 @@ class MissionCompletionPushTransactionTest {
     @Test
     void committedEventRunsAfterCommitOnTheDedicatedExecutor() throws Exception {
         try (var context = new AnnotationConfigApplicationContext(TestConfig.class)) {
-            var query = context.getBean(FamilyPushRecipientQuery.class);
+            var userService = context.getBean(UserService.class);
             var manager = context.getBean(TestTransactionManager.class);
             Thread publisherThread = Thread.currentThread();
             AtomicReference<Thread> listenerThread = new AtomicReference<>();
             AtomicReference<Boolean> committedWhenCalled = new AtomicReference<>();
             CountDownLatch called = new CountDownLatch(1);
-            when(query.findParents(3L)).thenAnswer(invocation -> {
+            when(userService.getUser(3L)).thenAnswer(invocation -> {
                 listenerThread.set(Thread.currentThread());
-                committedWhenCalled.set(manager.committed);
+                committedWhenCalled.set(manager.commitCount > 0);
                 called.countDown();
-                return Optional.empty();
+                return User.create("하늘");
             });
 
             new TransactionTemplate(manager).executeWithoutResult(status -> {
                 context.publishEvent(event);
-                verifyNoInteractions(query);
+                verifyNoInteractions(userService);
             });
 
             assertThat(called.await(2, TimeUnit.SECONDS)).isTrue();
@@ -61,7 +62,7 @@ class MissionCompletionPushTransactionTest {
     @Test
     void rolledBackAndNonTransactionalEventsDoNotSend() {
         try (var context = new AnnotationConfigApplicationContext(TestConfig.class)) {
-            var query = context.getBean(FamilyPushRecipientQuery.class);
+            var userService = context.getBean(UserService.class);
 
             new TransactionTemplate(context.getBean(TestTransactionManager.class)).executeWithoutResult(status -> {
                 context.publishEvent(event);
@@ -69,7 +70,7 @@ class MissionCompletionPushTransactionTest {
             });
             context.publishEvent(event);
 
-            verifyNoInteractions(query, context.getBean(PushService.class));
+            verifyNoInteractions(userService, context.getBean(PushService.class));
         }
     }
 
@@ -79,8 +80,13 @@ class MissionCompletionPushTransactionTest {
     static class TestConfig {
 
         @Bean
-        FamilyPushRecipientQuery recipientQuery() {
-            return mock(FamilyPushRecipientQuery.class);
+        UserService userService() {
+            return mock(UserService.class);
+        }
+
+        @Bean
+        FamilyService familyService() {
+            return mock(FamilyService.class);
         }
 
         @Bean
@@ -89,8 +95,8 @@ class MissionCompletionPushTransactionTest {
         }
 
         @Bean
-        MissionCompletionPushListener listener(FamilyPushRecipientQuery query, PushService service) {
-            return new MissionCompletionPushListener(query, service);
+        MissionPushListener listener(UserService userService, FamilyService familyService, PushService service) {
+            return new MissionPushListener(userService, familyService, service);
         }
 
         @Bean
@@ -112,7 +118,8 @@ class MissionCompletionPushTransactionTest {
 
     static class TestTransactionManager extends AbstractPlatformTransactionManager {
 
-        private volatile boolean committed;
+        // 리스너가 부르는 서비스도 트랜잭션을 열 수 있어, 시작 시 초기화하지 않는 커밋 횟수로 기록한다.
+        private volatile int commitCount;
 
         @Override
         protected Object doGetTransaction() {
@@ -121,12 +128,11 @@ class MissionCompletionPushTransactionTest {
 
         @Override
         protected void doBegin(Object transaction, TransactionDefinition definition) {
-            committed = false;
         }
 
         @Override
         protected void doCommit(DefaultTransactionStatus status) {
-            committed = true;
+            commitCount++;
         }
 
         @Override

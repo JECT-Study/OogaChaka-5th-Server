@@ -48,9 +48,9 @@ eventPublisher.publishEvent(new MissionCompletionRequestedEvent(mission.getId(),
 
 1. `mission/event`에 이벤트 record를 만든다.
 2. `PushNotification`에 문구를 만드는 정적 메서드를 추가하고, `NotificationType`에 값을 추가한다.
-3. 리스너에서 받는 사람의 user ID를 구해 `PushService.sendToUsers(userIds, notification)`를 호출한다.
+3. `MissionPushListener`에 이벤트를 받는 메서드를 추가하고, 받는 사람의 user ID를 구해 `PushService.sendToUsers(userIds, notification)`를 호출한다.
    - 부모 → 자녀(예: 승인·반려)는 이벤트에 담긴 자녀 ID를 그대로 넘기면 된다.
-   - 자녀 → 부모는 `FamilyPushRecipientQuery.findParents(childUserId)`로 부모를 찾는다.
+   - 자녀 → 부모는 `FamilyService.listParentUserIds(자녀의 familyMemberId)`로 부모를 찾는다.
 
 ## 실패 처리
 
