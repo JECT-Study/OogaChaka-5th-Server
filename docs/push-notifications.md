@@ -6,7 +6,7 @@
 ## 디바이스 등록·해제 API
 
 로그인 직후, 앱 시작, FCM 토큰 갱신 때마다 등록을 보낸다. 같은 토큰을 다시 보내도 행이 늘지 않고,
-다른 계정으로 로그인하면 소유자만 바뀐다. `devicePlatform`은 `ANDROID`, `IOS`, `WEB` 중 하나다.
+다른 계정으로 로그인하면 소유자만 바뀐다. `devicePlatform`은 `ANDROID`, `IOS`, `WEB` 중 하나이며 대소문자를 구분하지 않는다(`Capacitor.getPlatform()` 값을 그대로 보내도 된다).
 
 ```http
 PUT /api/v1/push/registrations
