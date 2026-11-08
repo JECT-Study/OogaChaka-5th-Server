@@ -51,3 +51,7 @@ tasks.register('jasyptEncrypt', JavaExec) {
         }
     }
 }
+
+tasks.named('processResources') {
+    exclude 'application-local.properties'
+}
