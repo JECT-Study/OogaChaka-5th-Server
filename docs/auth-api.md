@@ -82,12 +82,12 @@ Redis **6.2 이상**이 필요하다(GETDEL). 키는 `AuthRedisKeys`에서 관�
 ## 제공자 콘솔 설정
 
 redirect URI는 서버 API가 아니라 프런트 콜백 주소이며, 콘솔 등록값과 글자 하나까지 일치해야 한다.
-client-id를 비워 둔 제공자는 사용하지 않는 것으로 본다. client secret은 Jasypt `ENC(...)`로 주입한다.
+client-id는 `application.properties`에 평문으로, client secret은 Jasypt `ENC(...)`로 적는다.
+client-id를 비워 둔 제공자는 사용하지 않는 것으로 본다. redirect URI만 환경변수로 바꿀 수 있다.
 
-- **구글**: OAuth client를 웹 애플리케이션으로 만들고 승인된 리디렉션 URI에 `GOOGLE_REDIRECT_URI`를 등록한다.
-  `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`를 주입한다.
-- **카카오**: Redirect URI에 `KAKAO_REDIRECT_URI`를 등록한다. `KAKAO_CLIENT_ID`에는 REST API 키를 쓴다.
-  콘솔에서 client secret을 껐다면 `KAKAO_CLIENT_SECRET`은 비워 둔다. 동의항목(닉네임·이메일)을 확인한다.
+- **구글**: OAuth client를 웹 애플리케이션으로 만들고 승인된 리디렉션 URI에 `GOOGLE_REDIRECT_URI` 값을 등록한다.
+- **카카오**: Redirect URI에 `KAKAO_REDIRECT_URI` 값을 등록한다. client-id에는 REST API 키를 쓴다.
+  콘솔에서 client secret을 껐다면 secret은 비워 둔다. 동의항목은 닉네임만 사용한다(이메일은 비즈 앱 권한이 없어 받지 않는다).
   카카오 PKCE는 OIDC Discovery 메타데이터만 근거라 실제 로그인으로 확인해야 한다.
-- **네이버**: Callback URL에 `NAVER_REDIRECT_URI`를 등록하고 별명·이메일 동의항목을 설정한다.
-  `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `NAVER_REDIRECT_URI`를 주입한다.
+- **네이버**: Callback URL에 `NAVER_REDIRECT_URI` 값을 등록하고 별명·이메일 동의항목을 설정한다.
+  아직 앱을 발급받지 않아 client-id를 비워 두었다.
