@@ -139,7 +139,22 @@ jobs:
           aws s3 cp "$RUNNER_TEMP/app.tar.gz" "s3://$BUCKET/$KEY" \
             --sse AES256 --only-show-errors
 
+      - name: Check latest dev commit
+        id: latest
+        run: |
+          set -euo pipefail
+          LATEST=$(git ls-remote origin refs/heads/dev | cut -f1)
+          test -n "$LATEST"
+
+          if [ "$LATEST" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "최신 dev 커밋이 아니므로 배포를 건너뜁니다."
+          fi
+
       - name: Deploy using SSM
+        if: steps.latest.outputs.deploy == 'true'
         env:
           BUCKET: ${{ steps.addresses.outputs.bucket }}
           KEY: ${{ steps.addresses.outputs.key }}
