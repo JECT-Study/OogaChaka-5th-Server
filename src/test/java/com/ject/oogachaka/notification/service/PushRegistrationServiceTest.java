@@ -1,28 +1,28 @@
 package com.ject.oogachaka.notification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.global.crypto.HmacPurpose;
 import com.ject.oogachaka.global.crypto.HmacService;
-import com.ject.oogachaka.global.exception.BusinessException;
-import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.notification.dto.PushRegistrationRequest;
 import com.ject.oogachaka.notification.dto.PushUnregistrationRequest;
+import com.ject.oogachaka.notification.entity.DeviceToken;
 import com.ject.oogachaka.notification.enums.DevicePlatform;
+import com.ject.oogachaka.notification.repository.DeviceTokenRepository;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.CannotAcquireLockException;
-import org.springframework.dao.DataIntegrityViolationException;
 
+/** 등록·해제 분기만 확인한다. DB는 목 객체라 UNIQUE 제약 자체는 검증하지 않는다. */
 @ExtendWith(MockitoExtension.class)
 class PushRegistrationServiceTest {
 
@@ -30,64 +30,47 @@ class PushRegistrationServiceTest {
     private HmacService hmacService;
 
     @Mock
-    private DeviceTokenService deviceTokenService;
+    private DeviceTokenRepository repository;
 
     @InjectMocks
     private PushRegistrationService service;
 
-    @Test
-    void registrationUsesTheOriginalStringAndDeviceTokenHmacKey() {
-        var request = new PushRegistrationRequest("CaseSensitive-Dummy-Token", DevicePlatform.IOS);
-        when(hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN)).thenReturn("hash");
-
-        service.register(1L, request);
-
-        verify(deviceTokenService).upsert(1L, request.token(), "hash", DevicePlatform.IOS);
-    }
-
-    @Test
-    void concurrentInsertOrGapLockFailureRetriesThroughTheTransactionBoundary() {
-        var request = new PushRegistrationRequest("dummy-token", DevicePlatform.ANDROID);
-        when(hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN)).thenReturn("hash");
-        doThrow(new DataIntegrityViolationException("dummy-unique-conflict"))
-            .doThrow(new CannotAcquireLockException("dummy-gap-lock"))
-            .doNothing().when(deviceTokenService).upsert(1L, request.token(), "hash", DevicePlatform.ANDROID);
-
-        service.register(1L, request);
-
-        verify(deviceTokenService, times(3)).upsert(1L, request.token(), "hash", DevicePlatform.ANDROID);
-        verify(hmacService).hash(request.token(), HmacPurpose.DEVICE_TOKEN);
-    }
-
-    @Test
-    void contentionHasABoundedRetryCountAndASafeBusinessError() {
-        var request = new PushRegistrationRequest("dummy-token", DevicePlatform.WEB);
-        when(hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN)).thenReturn("hash");
-        doThrow(new CannotAcquireLockException("dummy-lock-contention"))
-            .when(deviceTokenService).upsert(1L, request.token(), "hash", DevicePlatform.WEB);
-
-        assertThatThrownBy(() -> service.register(1L, request))
-            .isInstanceOfSatisfying(BusinessException.class,
-                error -> assertThat(error.getErrorCode())
-                    .isEqualTo(ErrorCode.PUSH_REGISTRATION_CONFLICT));
-        verify(deviceTokenService, times(3)).upsert(1L, request.token(), "hash", DevicePlatform.WEB);
-    }
-
-    @Test
-    void unauthenticatedRegistrationAndUnregistrationAreRejectedBeforeHashing() {
-        assertThatThrownBy(() -> service.register(null, new PushRegistrationRequest("dummy", DevicePlatform.IOS)))
-            .isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> service.unregister(null, new PushUnregistrationRequest("dummy")))
-            .isInstanceOf(BusinessException.class);
-        verifyNoInteractions(hmacService, deviceTokenService);
-    }
-
-    @Test
-    void unregisterHashesTheTokenAndPassesTheAuthenticatedOwner() {
+    @BeforeEach
+    void setUp() {
         when(hmacService.hash("dummy-token", HmacPurpose.DEVICE_TOKEN)).thenReturn("hash");
+    }
 
-        service.unregister(1L, new PushUnregistrationRequest("dummy-token"));
+    // 처음 보는 토큰이면 해시와 함께 새 기기로 저장한다.
+    @Test
+    void 새_토큰이면_저장한다() {
+        when(repository.findByTokenHash("hash")).thenReturn(Optional.empty());
 
-        verify(deviceTokenService).unregister(1L, "hash");
+        service.register(7L, new PushRegistrationRequest("dummy-token", DevicePlatform.IOS));
+
+        ArgumentCaptor<DeviceToken> saved = ArgumentCaptor.forClass(DeviceToken.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getUserId()).isEqualTo(7L);
+        assertThat(saved.getValue().getTokenHash()).isEqualTo("hash");
+    }
+
+    // 같은 기기에서 다른 계정으로 로그인하면 새 행을 만들지 않고 소유자를 바꾼다.
+    @Test
+    void 이미_등록된_토큰이면_소유자를_바꾼다() {
+        DeviceToken device = DeviceToken.create(3L, "dummy-token", "hash", DevicePlatform.ANDROID);
+        when(repository.findByTokenHash("hash")).thenReturn(Optional.of(device));
+
+        service.register(7L, new PushRegistrationRequest("dummy-token", DevicePlatform.IOS));
+
+        assertThat(device.getUserId()).isEqualTo(7L);
+        assertThat(device.getDevicePlatform()).isEqualTo(DevicePlatform.IOS);
+        verify(repository, never()).save(any());
+    }
+
+    // 해제는 요청한 사용자의 토큰만 지운다.
+    @Test
+    void 해제는_본인_토큰만_지운다() {
+        service.unregister(7L, new PushUnregistrationRequest("dummy-token"));
+
+        verify(repository).deleteByUserIdAndTokenHash(7L, "hash");
     }
 }

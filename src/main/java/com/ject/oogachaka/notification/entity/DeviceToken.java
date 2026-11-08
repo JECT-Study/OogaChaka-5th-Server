@@ -11,23 +11,18 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** 디바이스별 푸시 수신 등록. 토큰 원문은 응답이나 문자열 표현에 노출하지 않는다. */
+/** 기기별 푸시 수신 등록. 토큰 원문은 AES로 암호화해 저장하고, 중복 검사는 token_hash로 한다. */
 @Getter
 @Entity
-@Table(name = "device_token",
-    indexes = @Index(name = "idx_device_token_user", columnList = "user_id"),
-    uniqueConstraints = @UniqueConstraint(name = "uk_device_token_token_hash", columnNames = "token_hash"))
+@Table(name = "device_token")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeviceToken extends BaseTimeEntity {
 
@@ -64,12 +59,10 @@ public class DeviceToken extends BaseTimeEntity {
         return new DeviceToken(userId, token, tokenHash, devicePlatform);
     }
 
+    // 같은 기기에서 다른 계정으로 로그인하면 소유자가 바뀐다.
     public void synchronize(Long userId, DevicePlatform devicePlatform) {
         this.userId = userId;
         this.devicePlatform = devicePlatform;
-        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        // DB의 DATETIME(6) 정밀도에서도 재등록 이후의 삭제를 구분한다.
-        this.lastSyncedAt = lastSyncedAt == null || now.isAfter(lastSyncedAt)
-            ? now : lastSyncedAt.plusNanos(1000);
+        this.lastSyncedAt = LocalDateTime.now();
     }
 }

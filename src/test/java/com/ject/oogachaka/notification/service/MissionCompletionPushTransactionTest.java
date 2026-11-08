@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.mission.event.MissionCompletionRequestedEvent;
+import com.ject.oogachaka.notification.repository.FamilyPushRecipientQuery;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -27,16 +28,17 @@ class MissionCompletionPushTransactionTest {
 
     private final MissionCompletionRequestedEvent event = new MissionCompletionRequestedEvent(10L, 3L, "책 읽기");
 
+    // 트랜잭션 안에서 발행한 이벤트는 커밋된 뒤 푸시 전용 스레드에서 처리된다.
     @Test
-    void committedEventWithLongTitleRunsAfterCommitOnTheDedicatedExecutor() throws Exception {
+    void committedEventRunsAfterCommitOnTheDedicatedExecutor() throws Exception {
         try (var context = new AnnotationConfigApplicationContext(TestConfig.class)) {
-            var port = context.getBean(ParentPushRecipientPort.class);
+            var query = context.getBean(FamilyPushRecipientQuery.class);
             var manager = context.getBean(TestTransactionManager.class);
             Thread publisherThread = Thread.currentThread();
             AtomicReference<Thread> listenerThread = new AtomicReference<>();
             AtomicReference<Boolean> committedWhenCalled = new AtomicReference<>();
             CountDownLatch called = new CountDownLatch(1);
-            when(port.findByChildUserId(3L)).thenAnswer(invocation -> {
+            when(query.findParents(3L)).thenAnswer(invocation -> {
                 listenerThread.set(Thread.currentThread());
                 committedWhenCalled.set(manager.committed);
                 called.countDown();
@@ -44,8 +46,8 @@ class MissionCompletionPushTransactionTest {
             });
 
             new TransactionTemplate(manager).executeWithoutResult(status -> {
-                context.publishEvent(new MissionCompletionRequestedEvent(10L, 3L, "가".repeat(100)));
-                verifyNoInteractions(port);
+                context.publishEvent(event);
+                verifyNoInteractions(query);
             });
 
             assertThat(called.await(2, TimeUnit.SECONDS)).isTrue();
@@ -55,10 +57,11 @@ class MissionCompletionPushTransactionTest {
         }
     }
 
+    // 롤백되었거나 트랜잭션 밖에서 발행한 이벤트는 푸시를 보내지 않는다.
     @Test
     void rolledBackAndNonTransactionalEventsDoNotSend() {
         try (var context = new AnnotationConfigApplicationContext(TestConfig.class)) {
-            var port = context.getBean(ParentPushRecipientPort.class);
+            var query = context.getBean(FamilyPushRecipientQuery.class);
 
             new TransactionTemplate(context.getBean(TestTransactionManager.class)).executeWithoutResult(status -> {
                 context.publishEvent(event);
@@ -66,7 +69,7 @@ class MissionCompletionPushTransactionTest {
             });
             context.publishEvent(event);
 
-            verifyNoInteractions(port, context.getBean(PushSender.class));
+            verifyNoInteractions(query, context.getBean(PushService.class));
         }
     }
 
@@ -76,23 +79,18 @@ class MissionCompletionPushTransactionTest {
     static class TestConfig {
 
         @Bean
-        ParentPushRecipientPort recipientPort() {
-            return mock(ParentPushRecipientPort.class);
+        FamilyPushRecipientQuery recipientQuery() {
+            return mock(FamilyPushRecipientQuery.class);
         }
 
         @Bean
-        PushSender pushSender() {
-            return mock(PushSender.class);
+        PushService pushService() {
+            return mock(PushService.class);
         }
 
         @Bean
-        DeviceTokenService deviceTokenService() {
-            return mock(DeviceTokenService.class);
-        }
-
-        @Bean
-        MissionCompletionPushListener listener(ParentPushRecipientPort port, PushSender sender, DeviceTokenService service) {
-            return new MissionCompletionPushListener(port, sender, service);
+        MissionCompletionPushListener listener(FamilyPushRecipientQuery query, PushService service) {
+            return new MissionCompletionPushListener(query, service);
         }
 
         @Bean

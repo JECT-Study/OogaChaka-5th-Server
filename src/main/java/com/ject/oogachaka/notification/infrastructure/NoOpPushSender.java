@@ -12,7 +12,7 @@ public class NoOpPushSender implements PushSender {
 
     @Override
     public List<DeviceToken> send(List<DeviceToken> devices, PushNotification notification) {
-        log.info("푸시 비활성화로 발송 생략. type={}, deviceCount={}", notification.type(), devices.size());
+        log.info("FCM 비활성화로 푸시 생략. title={}, deviceCount={}", notification.title(), devices.size());
         return List.of();
     }
 }

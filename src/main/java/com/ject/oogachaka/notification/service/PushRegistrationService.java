@@ -2,48 +2,36 @@ package com.ject.oogachaka.notification.service;
 
 import com.ject.oogachaka.global.crypto.HmacPurpose;
 import com.ject.oogachaka.global.crypto.HmacService;
-import com.ject.oogachaka.global.exception.BusinessException;
-import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.notification.dto.PushRegistrationRequest;
 import com.ject.oogachaka.notification.dto.PushUnregistrationRequest;
+import com.ject.oogachaka.notification.entity.DeviceToken;
+import com.ject.oogachaka.notification.repository.DeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class PushRegistrationService {
 
-    private static final int MAX_ATTEMPTS = 3;
-
     private final HmacService hmacService;
-    private final DeviceTokenService deviceTokenService;
+    private final DeviceTokenRepository deviceTokenRepository;
 
+    // 이미 등록된 토큰이면 소유자·플랫폼만 갱신해 같은 기기가 여러 행으로 늘어나지 않게 한다.
+    @Transactional
     public void register(Long userId, PushRegistrationRequest request) {
-        requireUser(userId);
         String tokenHash = hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN);
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            try {
-                deviceTokenService.upsert(userId, request.token(), tokenHash, request.devicePlatform());
-                return;
-            } catch (DataIntegrityViolationException | PessimisticLockingFailureException exception) {
-                // 없는 토큰의 동시 INSERT/갭 잠금 교착은 새 트랜잭션에서 기존 행 조회로 수렴한다.
-                if (attempt == MAX_ATTEMPTS) {
-                    throw new BusinessException(ErrorCode.PUSH_REGISTRATION_CONFLICT);
-                }
-            }
-        }
+        deviceTokenRepository.findByTokenHash(tokenHash).ifPresentOrElse(
+            device -> device.synchronize(userId, request.devicePlatform()),
+            () -> deviceTokenRepository.save(
+                DeviceToken.create(userId, request.token(), tokenHash, request.devicePlatform())));
     }
 
+    // 본인 소유 토큰만 지워, 계정 전환 전의 세션이 새 소유자의 등록을 해제하지 못하게 한다.
+    @Transactional
     public void unregister(Long userId, PushUnregistrationRequest request) {
-        requireUser(userId);
-        deviceTokenService.unregister(userId, hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN));
-    }
-
-    private void requireUser(Long userId) {
-        if (userId == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
-        }
+        deviceTokenRepository.deleteByUserIdAndTokenHash(userId,
+            hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN));
     }
 }

@@ -1,17 +1,16 @@
 package com.ject.oogachaka.notification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ject.oogachaka.mission.event.MissionCompletionRequestedEvent;
-import com.ject.oogachaka.notification.entity.DeviceToken;
-import com.ject.oogachaka.notification.enums.DevicePlatform;
+import com.ject.oogachaka.notification.repository.FamilyPushRecipientQuery;
+import com.ject.oogachaka.notification.repository.FamilyPushRecipientQuery.Parents;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,80 +19,42 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+/** 수신자와 알림 문구를 만드는 부분만 확인한다. 커밋 후·별도 스레드 실행은 MissionCompletionPushTransactionTest에서 본다. */
 @ExtendWith(MockitoExtension.class)
 class MissionCompletionPushListenerTest {
 
     @Mock
-    private ParentPushRecipientPort recipientPort;
+    private FamilyPushRecipientQuery recipientQuery;
 
     @Mock
-    private PushSender pushSender;
-
-    @Mock
-    private DeviceTokenService deviceTokenService;
+    private PushService pushService;
 
     @InjectMocks
     private MissionCompletionPushListener listener;
 
     private final MissionCompletionRequestedEvent event = new MissionCompletionRequestedEvent(10L, 3L, "책 읽기");
 
+    // 자녀의 가족 부모 전원에게 자녀 닉네임과 미션 제목이 담긴 알림을 보낸다.
     @Test
-    void sendsToAllDevicesReturnedByTheParentPortAndIncludesDeepLinkData() {
-        var parentDevices = List.of(DeviceToken.create(1L, "dummy-parent-1", "hash-1", DevicePlatform.IOS),
-            DeviceToken.create(2L, "dummy-parent-2", "hash-2", DevicePlatform.ANDROID));
-        when(recipientPort.findByChildUserId(3L)).thenReturn(Optional.of(new ParentPushRecipients("자녀", parentDevices)));
-        when(pushSender.send(eq(parentDevices), any())).thenReturn(List.of());
+    void 가족_부모_전원에게_보낸다() {
+        when(recipientQuery.findParents(3L)).thenReturn(Optional.of(new Parents("하늘", List.of(1L, 2L))));
 
         listener.onMissionCompletionRequested(event);
 
-        var payload = ArgumentCaptor.forClass(PushNotification.class);
-        verify(pushSender).send(eq(parentDevices), payload.capture());
-        assertThat(payload.getValue().title()).isEqualTo("미션 완료 인증 요청");
-        assertThat(payload.getValue().body()).isEqualTo("자녀님이 '책 읽기' 완료 인증을 요청했어요");
-        assertThat(payload.getValue().data()).containsEntry("type", "MISSION_COMPLETION_REQUESTED")
-            .containsEntry("missionId", "10").containsEntry("childUserId", "3");
-        verifyNoInteractions(deviceTokenService);
+        ArgumentCaptor<PushNotification> notification = ArgumentCaptor.forClass(PushNotification.class);
+        verify(pushService).sendToUsers(eq(List.of(1L, 2L)), notification.capture());
+        assertThat(notification.getValue().body()).isEqualTo("하늘님이 '책 읽기' 완료 인증을 요청했어요");
+        assertThat(notification.getValue().data())
+            .isEqualTo(Map.of("type", "MISSION_COMPLETION_REQUESTED", "missionId", "10"));
     }
 
+    // 가족이나 부모가 없으면 보내지 않는다.
     @Test
-    void deletesOnlyDevicesReportedAsPermanentlyInvalid() {
-        DeviceToken valid = DeviceToken.create(1L, "dummy-valid", "hash-1", DevicePlatform.IOS);
-        DeviceToken invalid = DeviceToken.create(2L, "dummy-invalid", "hash-2", DevicePlatform.WEB);
-        var devices = List.of(valid, invalid);
-        when(recipientPort.findByChildUserId(3L)).thenReturn(Optional.of(new ParentPushRecipients("자녀", devices)));
-        when(pushSender.send(eq(devices), any())).thenReturn(List.of(invalid));
+    void 부모가_없으면_보내지_않는다() {
+        when(recipientQuery.findParents(3L)).thenReturn(Optional.empty());
 
         listener.onMissionCompletionRequested(event);
 
-        verify(deviceTokenService).deleteInvalidRegistrations(List.of(invalid));
-    }
-
-    @Test
-    void noParentsOrNoRegisteredDevicesSkipsSending() {
-        when(recipientPort.findByChildUserId(3L)).thenReturn(Optional.empty())
-            .thenReturn(Optional.of(new ParentPushRecipients("자녀", List.of())));
-
-        listener.onMissionCompletionRequested(event);
-        listener.onMissionCompletionRequested(event);
-
-        verifyNoInteractions(pushSender, deviceTokenService);
-    }
-
-    @Test
-    void lookupFailureDoesNotEscapeTheAfterCommitHandler() {
-        when(recipientPort.findByChildUserId(3L)).thenThrow(new IllegalStateException("dummy-lookup-failure"));
-
-        assertThatCode(() -> listener.onMissionCompletionRequested(event)).doesNotThrowAnyException();
-        verifyNoInteractions(pushSender, deviceTokenService);
-    }
-
-    @Test
-    void senderFailureDoesNotDeleteTokensOrEscapeTheHandler() {
-        var devices = List.of(DeviceToken.create(1L, "dummy-token", "hash", DevicePlatform.WEB));
-        when(recipientPort.findByChildUserId(3L)).thenReturn(Optional.of(new ParentPushRecipients("자녀", devices)));
-        when(pushSender.send(eq(devices), any())).thenThrow(new IllegalStateException("dummy-provider-failure"));
-
-        assertThatCode(() -> listener.onMissionCompletionRequested(event)).doesNotThrowAnyException();
-        verifyNoInteractions(deviceTokenService);
+        verifyNoInteractions(pushService);
     }
 }
