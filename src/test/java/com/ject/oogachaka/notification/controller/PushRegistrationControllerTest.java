@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ject.oogachaka.global.exception.GlobalExceptionHandler;
 import com.ject.oogachaka.notification.dto.PushRegistrationRequest;
-import com.ject.oogachaka.notification.dto.PushUnregistrationRequest;
+import com.ject.oogachaka.notification.dto.PushRegistrationDeleteRequest;
 import com.ject.oogachaka.notification.enums.DevicePlatform;
 import com.ject.oogachaka.notification.service.PushRegistrationService;
 import java.util.List;
@@ -79,6 +79,6 @@ class PushRegistrationControllerTest {
                 .content("{\"token\":\"dummy-token\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SUCCESS"));
 
-        verify(service).unregister(eq(7L), any(PushUnregistrationRequest.class));
+        verify(service).delete(eq(7L), any(PushRegistrationDeleteRequest.class));
     }
 }

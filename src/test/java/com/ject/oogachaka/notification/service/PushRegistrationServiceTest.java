@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 import com.ject.oogachaka.global.crypto.HmacPurpose;
 import com.ject.oogachaka.global.crypto.HmacService;
 import com.ject.oogachaka.notification.dto.PushRegistrationRequest;
-import com.ject.oogachaka.notification.dto.PushUnregistrationRequest;
+import com.ject.oogachaka.notification.dto.PushRegistrationDeleteRequest;
 import com.ject.oogachaka.notification.entity.DeviceToken;
 import com.ject.oogachaka.notification.enums.DevicePlatform;
 import com.ject.oogachaka.notification.repository.DeviceTokenRepository;
@@ -69,7 +69,7 @@ class PushRegistrationServiceTest {
     // 해제는 요청한 사용자의 토큰만 지운다.
     @Test
     void 해제는_본인_토큰만_지운다() {
-        service.unregister(7L, new PushUnregistrationRequest("dummy-token"));
+        service.delete(7L, new PushRegistrationDeleteRequest("dummy-token"));
 
         verify(repository).deleteByUserIdAndTokenHash(7L, "hash");
     }

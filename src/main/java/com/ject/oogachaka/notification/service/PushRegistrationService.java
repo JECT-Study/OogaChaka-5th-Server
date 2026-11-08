@@ -3,7 +3,7 @@ package com.ject.oogachaka.notification.service;
 import com.ject.oogachaka.global.crypto.HmacPurpose;
 import com.ject.oogachaka.global.crypto.HmacService;
 import com.ject.oogachaka.notification.dto.PushRegistrationRequest;
-import com.ject.oogachaka.notification.dto.PushUnregistrationRequest;
+import com.ject.oogachaka.notification.dto.PushRegistrationDeleteRequest;
 import com.ject.oogachaka.notification.entity.DeviceToken;
 import com.ject.oogachaka.notification.repository.DeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +30,7 @@ public class PushRegistrationService {
 
     // 본인 소유 토큰만 지워, 계정 전환 전의 세션이 새 소유자의 등록을 해제하지 못하게 한다.
     @Transactional
-    public void unregister(Long userId, PushUnregistrationRequest request) {
+    public void delete(Long userId, PushRegistrationDeleteRequest request) {
         deviceTokenRepository.deleteByUserIdAndTokenHash(userId,
             hmacService.hash(request.token(), HmacPurpose.DEVICE_TOKEN));
     }
