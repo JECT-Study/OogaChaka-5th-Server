@@ -1,0 +1,23 @@
+# 로컬 개발용 MySQL·Redis. 공용 DB 대신 이 DB를 쓰면 브랜치의 마이그레이션을 자유롭게 실행·초기화할 수 있다.
+# 실행: docker compose up -d / 데이터까지 초기화: docker compose down -v
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: oogachaka-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: oogachaka
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: oogachaka-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  mysql-data:
