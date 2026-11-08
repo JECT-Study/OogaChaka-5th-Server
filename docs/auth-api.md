@@ -76,7 +76,7 @@ Content-Type: application/json
 
 Redis **6.2 이상**이 필요하다(GETDEL). 키는 `AuthRedisKeys`에서 관리한다.
 
-- `oogachaka:auth:state:<state>` → PKCE verifier(네이버는 빈 값); 기본 TTL 5분.
+- `oogachaka:auth:state:<state>` → `<제공자>:<PKCE verifier>`(네이버는 verifier가 빈 값); 기본 TTL 5분. 발급 때와 다른 제공자로 로그인하면 거부한다.
 - `oogachaka:auth:refresh:<userId>:<jti>` → userId; TTL은 refresh 수명(기본 14일).
 
 ## 제공자 콘솔 설정

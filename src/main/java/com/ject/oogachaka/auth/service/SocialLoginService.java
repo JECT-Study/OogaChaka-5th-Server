@@ -42,7 +42,7 @@ public class SocialLoginService {
         boolean pkce = SocialLoginClient.supportsPkce(provider);
         String state = randomValue();
         String verifier = pkce ? randomValue() : "";
-        stateStore.save(state, verifier);
+        stateStore.save(state, provider, verifier);
 
         UriComponentsBuilder uri = UriComponentsBuilder.fromUri(settings.getAuthorizationUri())
                 .queryParam("response_type", "code")
@@ -68,7 +68,7 @@ public class SocialLoginService {
     }
 
     public SocialLoginResponse login(SocialLoginRequest request) {
-        String verifier = stateStore.consume(request.state());
+        String verifier = stateStore.consume(request.state(), request.provider());
         SocialUserInfo info = client.getUserInfo(request.provider(), request.code(), request.state(), verifier);
         String hash = hmacService.hash(info.getProviderUserId(), HmacPurpose.SOCIAL_ID);
         SocialAccountResult result = accounts.findOrCreate(request.provider(), hash, info.getNickname(), info.getEmail());

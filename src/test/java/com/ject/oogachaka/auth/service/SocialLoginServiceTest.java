@@ -40,7 +40,7 @@ class SocialLoginServiceTest {
 
         AuthorizationResponse response = service.authorize(AuthProvider.GOOGLE);
         ArgumentCaptor<String> captured = ArgumentCaptor.forClass(String.class);
-        verify(states).save(eq(response.state()), captured.capture());
+        verify(states).save(eq(response.state()), eq(AuthProvider.GOOGLE), captured.capture());
         String verifier = captured.getValue();
         String expected = Base64.getUrlEncoder().withoutPadding().encodeToString(
             MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
