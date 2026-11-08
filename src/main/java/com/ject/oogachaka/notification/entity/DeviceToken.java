@@ -14,6 +14,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -23,7 +25,9 @@ import org.hibernate.type.SqlTypes;
 @Getter
 @Entity
 @Table(name = "device_token")
+@Builder(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class DeviceToken extends BaseTimeEntity {
 
     @Id
@@ -49,14 +53,14 @@ public class DeviceToken extends BaseTimeEntity {
     @Column(nullable = false)
     private LocalDateTime lastSyncedAt;
 
-    private DeviceToken(Long userId, String token, String tokenHash, DevicePlatform devicePlatform) {
-        this.token = token;
-        this.tokenHash = tokenHash;
-        synchronize(userId, devicePlatform);
-    }
-
     public static DeviceToken create(Long userId, String token, String tokenHash, DevicePlatform devicePlatform) {
-        return new DeviceToken(userId, token, tokenHash, devicePlatform);
+        return DeviceToken.builder()
+                .userId(userId)
+                .token(token)
+                .tokenHash(tokenHash)
+                .devicePlatform(devicePlatform)
+                .lastSyncedAt(LocalDateTime.now())
+                .build();
     }
 
     // 같은 기기에서 다른 계정으로 로그인하면 소유자가 바뀐다.
