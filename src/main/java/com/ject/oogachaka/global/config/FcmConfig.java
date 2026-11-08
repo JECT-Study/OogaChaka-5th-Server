@@ -22,8 +22,7 @@ public class FcmConfig {
     // devtools 재시작 때 같은 이름의 FirebaseApp이 남지 않도록 종료 시 삭제한다.
     @Bean(destroyMethod = "delete")
     @ConditionalOnProperty(name = "app.fcm.enabled", havingValue = "true")
-    public FirebaseApp firebaseApp(@Value("${app.fcm.service-account-json}") String serviceAccountJson)
-        throws IOException {
+    public FirebaseApp firebaseApp(@Value("${app.fcm.service-account-json}") String serviceAccountJson) throws IOException {
         GoogleCredentials credentials = GoogleCredentials.fromStream(
             new ByteArrayInputStream(serviceAccountJson.getBytes(StandardCharsets.UTF_8)));
         return FirebaseApp.initializeApp(FirebaseOptions.builder().setCredentials(credentials).build());
