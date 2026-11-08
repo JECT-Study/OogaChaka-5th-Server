@@ -12,6 +12,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -24,7 +26,9 @@ import org.hibernate.type.SqlTypes;
     @UniqueConstraint(name = "uk_social_account_provider_user", columnNames = {"auth_provider", "provider_user_id_hash"}),
     @UniqueConstraint(name = "uk_social_account_user", columnNames = "user_id")
 })
+@Builder(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class SocialAccount extends BaseTimeEntity {
 
     @Id
@@ -46,14 +50,12 @@ public class SocialAccount extends BaseTimeEntity {
     @Column(length = 255)
     private String email;
 
-    private SocialAccount(Long userId, AuthProvider authProvider, String providerUserIdHash, String email) {
-        this.userId = userId;
-        this.authProvider = authProvider;
-        this.providerUserIdHash = providerUserIdHash;
-        this.email = email;
-    }
-
     public static SocialAccount create(Long userId, AuthProvider provider, String providerUserIdHash, String email) {
-        return new SocialAccount(userId, provider, providerUserIdHash, email);
+        return SocialAccount.builder()
+                .userId(userId)
+                .authProvider(provider)
+                .providerUserIdHash(providerUserIdHash)
+                .email(email)
+                .build();
     }
 }
