@@ -5,7 +5,6 @@ public final class AuthRedisKeys {
 
     // 같은 Redis를 공유하는 다른 기능과 인증 데이터를 구분하는 프로젝트 전용 접두사다.
     private static final String PREFIX = "oogachaka:auth:";
-    // 사용자 ID가 아직 없는 로그인 시도는 state 자체로 조회한다.
     private static final String STATE = PREFIX + "state:";
     private static final String REFRESH = PREFIX + "refresh:";
 
