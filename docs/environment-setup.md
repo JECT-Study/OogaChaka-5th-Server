@@ -51,7 +51,7 @@ Java 17을 사용한다. 처음 세팅한다면 아래 [한눈에 보기](#한�
 | `REDIS_HOST`, `REDIS_PORT` | 기본 `localhost`, `6379` | 인증 |
 | `REDIS_PASSWORD` | 기본 빈 값. 필요하면 `ENC(...)`로 주입한다. | 비밀번호가 있는 Redis |
 | `{GOOGLE,KAKAO,NAVER}_REDIRECT_URI` | 제공자 콘솔에 등록한 프런트 콜백 URI와 정확히 일치 | 제공자 활성화 |
-| `CORS_ALLOWED_ORIGINS` | 쉼표로 구분한 명시적 origin. 기본 Capacitor `capacitor://localhost`, `http://localhost`, `https://localhost` | 웹/앱 환경에 맞게 설정 |
+| `CORS_ALLOWED_ORIGINS` | 쉼표로 구분한 명시적 origin. 기본 로컬 프런트 `http://localhost:5173`, Capacitor `capacitor://localhost`, `http://localhost`, `https://localhost` | 웹/앱 환경에 맞게 설정 |
 
 AES 키와 두 HMAC 키는 디코딩 결과가 모두 서로 달라야 한다. 이전 AES 버전의 키도 HMAC 키와
 같으면 시작에 실패한다. 키 누락, 잘못된 Base64, 32바이트가 아닌 값도 시작에 실패한다.
