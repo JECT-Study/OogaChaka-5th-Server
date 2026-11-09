@@ -63,6 +63,32 @@ wait_for_app() {
     return 1
 }
 
+# Authenticate Docker to the ECR registry in the image's region.
+login_to_ecr() {
+    local registry="$1" region="$2"
+
+    aws ecr get-login-password --region "$region" |
+        docker login --username AWS --password-stdin "$registry"
+}
+
+# Resolve the restored app image and download it only if it is missing locally.
+prepare_rollback_image() {
+    local previous_image registry
+    previous_image="$(docker compose -p app --project-directory "$DEST" \
+        config --images app)" || return 1
+    [ -n "$previous_image" ] || return 1
+
+    if docker image inspect "$previous_image" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    registry="${previous_image%%/*}"
+    if [[ "$registry" =~ ^[0-9]{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com(\.cn)?$ ]]; then
+        login_to_ecr "$registry" "${BASH_REMATCH[1]}" || return 1
+    fi
+    docker pull "$previous_image"
+}
+
 rollback() {
     result=$?
     trap - ERR
@@ -89,8 +115,9 @@ rollback() {
         if [ "$restore_failed" = 0 ] &&
            [ -f "$DEST/docker-compose.yml" ] &&
            [ -f "$DEST/.env" ]; then
-            if docker compose -p app --project-directory "$DEST" \
-                up -d --no-deps app && wait_for_app; then
+            if prepare_rollback_image &&
+                docker compose -p app --project-directory "$DEST" \
+                    up -d --no-deps --pull never app && wait_for_app; then
                 PRESERVE_BACKUP=0
                 echo "[deploy] 이전 버전 기동을 확인했습니다." >&2
             else
@@ -121,8 +148,7 @@ test -s "$STAGE/.env.runtime"
 docker compose -p app --project-directory "$STAGE" config -q
 
 echo "[deploy] 이미지 다운로드"
-aws ecr get-login-password --region "$REGION" |
-    docker login --username AWS --password-stdin "${IMAGE%%/*}"
+login_to_ecr "${IMAGE%%/*}" "$REGION"
 docker pull "$IMAGE"
 
 for file in docker-compose.yml .env .env.runtime; do
