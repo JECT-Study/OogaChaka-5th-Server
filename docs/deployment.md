@@ -15,7 +15,7 @@ SSM 명령 전송 직전에 dev 최신 커밋인지 확인하고, 오래된 실�
 - 리전: ap-northeast-2
 - App EC2: i-0350f972b242cd953
 - EC2가 실행 중이며 SSM 상태가 Online이어야 한다.
-- EC2에 AWS CLI, Docker, Docker Compose, curl이 설치되어 있어야 한다.
+- EC2에 AWS CLI, Docker, Docker Compose, curl, flock(util-linux)이 설치되어 있어야 한다.
 - GitHub Actions 배포 역할에 ECR 업로드, S3 업로드, SSM 명령·결과 조회 권한이 필요하다.
 - EC2 역할에 ECR 다운로드, 배포용 S3 읽기, Parameter Store 조회 권한이 필요하다.
 - SecureString 복호화에 사용하는 KMS 키의 접근 권한도 충족해야 한다.
@@ -86,6 +86,7 @@ DB와 Redis 주소는 EC2에서 접근 가능한 주소를 사용한다.
 ## 실패 처리와 복구
 
 새 설정 검사와 이미지 다운로드를 마친 뒤 기존 컨테이너를 갱신한다.
+이미 App EC2에서 배포가 진행 중이면 새 실행은 배포 잠금을 얻지 못하고 종료한다.
 기동 확인에 실패하면 이전 Compose·이미지 주소·실행 설정 복구를 시도한다.
 복구된 앱의 기동까지 확인한 경우에만 임시 백업을 삭제한다.
 

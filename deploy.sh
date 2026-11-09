@@ -13,12 +13,19 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-for command in aws docker curl; do
+for command in aws docker curl flock; do
     command -v "$command" >/dev/null
 done
 
 docker compose version >/dev/null
 install -d -m 750 "$DEST"
+
+# Keep the same lock through setup, startup checks and rollback.
+exec 9>>"$DEST/.deploy.lock"
+if ! flock -n 9; then
+    echo "[deploy] 배포 잠금을 얻지 못했습니다. 다른 배포가 실행 중인지 확인하세요." >&2
+    exit 1
+fi
 
 STAGE="$(mktemp -d "$DEST/.deploy.XXXXXX")"
 BACKUP="$STAGE/previous"
