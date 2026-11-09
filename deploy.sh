@@ -90,9 +90,9 @@ prepare_rollback_image() {
 }
 
 rollback() {
-    result=$?
+    local result="$1"
     trap - ERR
-    set +e
+    trap '' INT TERM
 
     if [ "$ACTIVATED" = 1 ]; then
         PRESERVE_BACKUP=1
@@ -131,7 +131,9 @@ rollback() {
     echo "[deploy] 배포 실패. 서버에서 앱 로그를 확인하세요." >&2
     exit "$result"
 }
-trap rollback ERR
+trap 'rollback "$?"' ERR
+trap 'rollback 130' INT
+trap 'rollback 143' TERM
 
 echo "[deploy] 실행 설정 준비"
 cp "$SOURCE/docker-compose.yml" "$STAGE/docker-compose.yml"
@@ -172,5 +174,6 @@ docker compose -p app --project-directory "$DEST" up -d --no-deps app
 echo "[deploy] 기동 확인"
 wait_for_app
 
+ACTIVATED=0
 PRESERVE_BACKUP=0
 echo "[deploy] 기동 확인 완료: $IMAGE"
