@@ -72,6 +72,7 @@ jobs:
     concurrency:
       group: deploy-app
       cancel-in-progress: false
+      queue: max
 
     env:
       APP_INSTANCE_ID: i-0350f972b242cd953
