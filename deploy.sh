@@ -7,6 +7,7 @@ REGION="ap-northeast-2"
 PARAMETER="/ooga/app/runtime-gwangmin-20261108-01"
 DEST="/opt/ooga/app"
 SOURCE="$(cd "$(dirname "$0")" && pwd)"
+APP_CONTAINER="oogachaka-app"
 
 if [ "$EUID" -ne 0 ]; then
     echo "[deploy] 관리자 권한으로 실행해야 합니다." >&2
@@ -33,6 +34,8 @@ mkdir "$BACKUP"
 
 ACTIVATED=0
 PRESERVE_BACKUP=0
+LEGACY_CONTAINER=""
+LEGACY_RUNNING=false
 
 cleanup() {
     if [ "$PRESERVE_BACKUP" = 1 ]; then
@@ -49,7 +52,7 @@ wait_for_app() {
 
     for attempt in $(seq 1 60); do
         running="$(docker inspect \
-            --format '{{.State.Running}}' oogachaka-app 2>/dev/null || true)"
+            --format '{{.State.Running}}' "$APP_CONTAINER" 2>/dev/null || true)"
 
         status="$(curl --connect-timeout 2 --max-time 3 \
             -s -o /dev/null -w '%{http_code}' \
@@ -96,6 +99,34 @@ prepare_rollback_image() {
     docker pull "$previous_image"
 }
 
+# Find only the container occupying the app name, including a stopped one.
+find_app_container() {
+    docker container ls --all --quiet --no-trunc --filter "name=^/${APP_CONTAINER}$"
+}
+
+container_owner() {
+    docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}/{{index .Config.Labels "com.docker.compose.service"}}' "$1"
+}
+
+# Restore the original container even when the previous deployment has no Compose files.
+restore_legacy_container() {
+    local current owner
+    current="$(find_app_container)" || return 1
+
+    if [ "$current" != "$LEGACY_CONTAINER" ]; then
+        if [ -n "$current" ]; then
+            owner="$(container_owner "$current")" || return 1
+            [ "$owner" = "app/app" ] || return 1
+            docker rm -f "$current" || return 1
+        fi
+        docker rename "$LEGACY_CONTAINER" "$APP_CONTAINER" || return 1
+    fi
+
+    if [ "$LEGACY_RUNNING" = true ]; then
+        docker start "$LEGACY_CONTAINER" && wait_for_app
+    fi
+}
+
 rollback() {
     local result="$1"
     trap - ERR
@@ -119,19 +150,23 @@ rollback() {
             fi
         done
 
-        if [ "$restore_failed" = 0 ] &&
+        if [ -n "$LEGACY_CONTAINER" ]; then
+            restore_legacy_container || restore_failed=1
+        elif [ "$restore_failed" = 0 ] &&
            [ -f "$DEST/docker-compose.yml" ] &&
            [ -f "$DEST/.env" ]; then
-            if prepare_rollback_image &&
+            { prepare_rollback_image &&
                 docker compose -p app --project-directory "$DEST" \
-                    up -d --no-deps --pull never app && wait_for_app; then
-                PRESERVE_BACKUP=0
-                echo "[deploy] 이전 버전 기동을 확인했습니다." >&2
-            else
-                echo "[deploy] 이전 버전 기동 확인 실패. 수동 복구가 필요합니다." >&2
-            fi
+                    up -d --no-deps --pull never app && wait_for_app; } || restore_failed=1
         else
-            echo "[deploy] 이전 설정 복원 실패 또는 이전 배포 없음. 서버 확인이 필요합니다." >&2
+            restore_failed=1
+        fi
+
+        if [ "$restore_failed" = 0 ]; then
+            PRESERVE_BACKUP=0
+            echo "[deploy] 이전 배포 상태를 복구했습니다." >&2
+        else
+            echo "[deploy] 이전 배포 복구 실패. 서버에서 확인해 주세요." >&2
         fi
     fi
 
@@ -166,12 +201,30 @@ for file in docker-compose.yml .env .env.runtime; do
     fi
 done
 
+current_container="$(find_app_container)"
+if [ -n "$current_container" ]; then
+    current_owner="$(container_owner "$current_container")"
+    if [ "$current_owner" != "app/app" ]; then
+        LEGACY_RUNNING="$(docker inspect --format '{{.State.Running}}' "$current_container")"
+        LEGACY_CONTAINER="$current_container"
+    fi
+fi
+
 ACTIVATED=1
 PRESERVE_BACKUP=1
 
 for file in docker-compose.yml .env .env.runtime; do
     install -m 600 "$STAGE/$file" "$DEST/$file"
 done
+
+if [ -n "$LEGACY_CONTAINER" ]; then
+    legacy_name="${APP_CONTAINER}.previous-${STAGE##*.}"
+    if [ "$LEGACY_RUNNING" = true ]; then
+        docker stop "$LEGACY_CONTAINER"
+    fi
+    docker rename "$LEGACY_CONTAINER" "$legacy_name"
+    echo "[deploy] 기존 컨테이너 보관: $legacy_name"
+fi
 
 echo "[deploy] 컨테이너 갱신"
 docker compose -p app --project-directory "$DEST" up -d --no-deps app
@@ -183,4 +236,8 @@ wait_for_app
 
 ACTIVATED=0
 PRESERVE_BACKUP=0
+if [ -n "$LEGACY_CONTAINER" ]; then
+    docker rm "$LEGACY_CONTAINER" ||
+        echo "[deploy] 보관한 기존 컨테이너를 정리하지 못했습니다: $legacy_name" >&2
+fi
 echo "[deploy] 기동 확인 완료: $IMAGE"
