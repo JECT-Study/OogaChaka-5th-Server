@@ -63,7 +63,7 @@ jobs:
     needs: ci
     if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     permissions:
       contents: read
@@ -77,6 +77,9 @@ jobs:
       APP_INSTANCE_ID: i-0350f972b242cd953
 
     steps:
+      - name: Record deployment job start
+        run: echo "DEPLOY_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
@@ -155,12 +158,23 @@ jobs:
 
       - name: Deploy using SSM
         if: steps.latest.outputs.deploy == 'true'
+        timeout-minutes: 21
         env:
           BUCKET: ${{ steps.addresses.outputs.bucket }}
           KEY: ${{ steps.addresses.outputs.key }}
           IMAGE: ${{ steps.addresses.outputs.repository }}@${{ steps.image.outputs.digest }}
+          SSM_DELIVERY_SECONDS: "60"
+          SSM_EXECUTION_SECONDS: "1020"
+          SSM_POLL_SECONDS: "1140"
+          AWS_MAX_ATTEMPTS: "1"
         run: |
           set -euo pipefail
+
+          # Leave 21 minutes for this step and a minute of job overhead.
+          if (( $(date +%s) - DEPLOY_JOB_STARTED_AT >= 23 * 60 )); then
+            echo "::error::배포 결과를 확인할 시간이 부족합니다. 새 SSM 명령을 전송하지 않습니다."
+            exit 1
+          fi
 
           cat > remote.sh <<'REMOTE'
           [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
@@ -169,9 +183,11 @@ jobs:
           export AWS_DEFAULT_REGION=ap-northeast-2
           STAGE="$(mktemp -d /tmp/ooga-app.XXXXXX)"
           trap 'rm -rf "$STAGE"' EXIT
-          aws s3 cp "s3://__BUCKET__/__KEY__" "$STAGE/app.tar.gz" --only-show-errors
-          tar -xzf "$STAGE/app.tar.gz" -C "$STAGE"
-          bash "$STAGE/deploy.sh" "__IMAGE__"
+          timeout --kill-after=10s 90s \
+            aws s3 cp "s3://__BUCKET__/__KEY__" "$STAGE/app.tar.gz" --only-show-errors
+          timeout --kill-after=5s 30s tar -xzf "$STAGE/app.tar.gz" -C "$STAGE"
+          # Send TERM after 8 minutes, then allow up to 6 minutes for rollback.
+          timeout --kill-after=360s 480s bash "$STAGE/deploy.sh" "__IMAGE__"
           REMOTE
 
           sed -i \
@@ -179,30 +195,36 @@ jobs:
             -e "s|__KEY__|${KEY}|g" \
             -e "s|__IMAGE__|${IMAGE}|g" remote.sh
 
-          jq -Rs '{commands: [.], executionTimeout: ["600"]}' \
+          jq -Rs --arg execution_timeout "$SSM_EXECUTION_SECONDS" \
+            '{commands: [.], executionTimeout: [$execution_timeout]}' \
             remote.sh > parameters.json
 
           COMMAND_ID=$(aws ssm send-command \
             --document-name AWS-RunShellScript \
             --instance-ids "$APP_INSTANCE_ID" \
             --parameters file://parameters.json \
-            --timeout-seconds 60 \
+            --timeout-seconds "$SSM_DELIVERY_SECONDS" \
+            --cli-connect-timeout 5 \
+            --cli-read-timeout 10 \
             --comment "app ${GITHUB_SHA:0:7}" \
             --query Command.CommandId --output text)
 
           echo "SSM command: $COMMAND_ID"
 
-          for attempt in $(seq 1 150); do
+          deadline=$((SECONDS + SSM_POLL_SECONDS))
+          while (( SECONDS < deadline )); do
             if STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$APP_INSTANCE_ID" \
+              --cli-connect-timeout 5 \
+              --cli-read-timeout 10 \
               --query Status --output text 2>/dev/null); then
               case "$STATUS" in
                 Success)
                   echo "배포 및 기동 확인 성공"
                   exit 0
                   ;;
-                Failed|TimedOut|Cancelled|Cancelling)
+                Failed|TimedOut|Cancelled)
                   echo "::error::SSM 배포 실패: $STATUS. 서버 로그를 확인하세요."
                   exit 1
                   ;;
