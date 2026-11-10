@@ -8,6 +8,7 @@ PARAMETER="/ooga/app/runtime-gwangmin-20261108-01"
 DEST="/opt/ooga/app"
 SOURCE="$(cd "$(dirname "$0")" && pwd)"
 APP_CONTAINER="oogachaka-app"
+APP_PROJECT="app"
 
 if [ "$EUID" -ne 0 ]; then
     echo "[deploy] 관리자 권한으로 실행해야 합니다." >&2
@@ -116,7 +117,7 @@ restore_legacy_container() {
     if [ "$current" != "$LEGACY_CONTAINER" ]; then
         if [ -n "$current" ]; then
             owner="$(container_owner "$current")" || return 1
-            [ "$owner" = "app/app" ] || return 1
+            [ "$owner" = "$APP_PROJECT/app" ] || return 1
             docker rm -f "$current" || return 1
         fi
         docker rename "$LEGACY_CONTAINER" "$APP_CONTAINER" || return 1
@@ -204,9 +205,17 @@ done
 current_container="$(find_app_container)"
 if [ -n "$current_container" ]; then
     current_owner="$(container_owner "$current_container")"
-    if [ "$current_owner" != "app/app" ]; then
+    if [ "$current_owner" != "$APP_PROJECT/app" ] ||
+       [ ! -s "$BACKUP/docker-compose.yml" ] ||
+       [ ! -s "$BACKUP/.env" ] ||
+       [ ! -s "$BACKUP/.env.runtime" ]; then
         LEGACY_RUNNING="$(docker inspect --format '{{.State.Running}}' "$current_container")"
         LEGACY_CONTAINER="$current_container"
+
+        # Compose finds containers by project and service labels even after a rename.
+        if [ "$current_owner" = "$APP_PROJECT/app" ]; then
+            APP_PROJECT="ooga-app-migration"
+        fi
     fi
 fi
 
@@ -227,7 +236,7 @@ if [ -n "$LEGACY_CONTAINER" ]; then
 fi
 
 echo "[deploy] 컨테이너 갱신"
-docker compose -p app --project-directory "$DEST" up -d --no-deps app
+docker compose -p "$APP_PROJECT" --project-directory "$DEST" up -d --no-deps app
 
 # 현재 기본 인증의 401 응답으로 기동 여부를 확인한다.
 # 전용 헬스 체크 API가 생기면 경로와 성공 코드를 변경한다.
