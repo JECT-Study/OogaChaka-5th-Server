@@ -15,7 +15,8 @@ SSM 명령 전송 직전에 dev 최신 커밋인지 확인하고, 오래된 실�
 ## 사전 준비
 
 - 리전: ap-northeast-2
-- App EC2: i-0350f972b242cd953
+- App EC2: Name 태그가 `ooga_chaka_app`인 인스턴스 (인스턴스 ID를 지정하지 않는다)
+- 같은 태그의 실행 중 인스턴스 전체에 배포하며, 한 대도 없으면 배포를 실패로 처리한다.
 - EC2가 실행 중이며 SSM 상태가 Online이어야 한다.
 - EC2에 AWS CLI, Docker, Docker Compose, curl, flock(util-linux)이 설치되어 있어야 한다.
 - GitHub Actions 배포 역할에 ECR 업로드, S3 업로드, SSM 명령·결과 조회 권한이 필요하다.

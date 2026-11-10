@@ -69,7 +69,8 @@ jobs:
       queue: max
 
     env:
-      APP_INSTANCE_ID: i-0350f972b242cd953
+      # 인스턴스 ID 대신 Name 태그로 대상을 찾는다. 배포 역할도 이 태그의 EC2에만 명령을 허용한다.
+      APP_NAME_TAG: ooga_chaka_app
 
     steps:
       - name: Record deployment job start
@@ -199,7 +200,7 @@ jobs:
 
           COMMAND_ID=$(aws ssm send-command \
             --document-name AWS-RunShellScript \
-            --instance-ids "$APP_INSTANCE_ID" \
+            --targets "Key=tag:Name,Values=${APP_NAME_TAG}" \
             --parameters file://parameters.json \
             --timeout-seconds "$SSM_DELIVERY_SECONDS" \
             --cli-connect-timeout 5 \
@@ -207,23 +208,46 @@ jobs:
             --comment "app ${GITHUB_SHA:0:7}" \
             --query Command.CommandId --output text)
 
-          echo "SSM command: $COMMAND_ID"
+          echo "SSM command: $COMMAND_ID (tag:Name=${APP_NAME_TAG})"
+
+          # 태그에 해당하는 인스턴스별 결과를 출력한다.
+          print_invocations() {
+            aws ssm list-command-invocations \
+              --command-id "$COMMAND_ID" \
+              --cli-connect-timeout 5 \
+              --cli-read-timeout 10 \
+              --query 'CommandInvocations[].[InstanceId,Status]' \
+              --output text 2>/dev/null || true
+          }
 
           deadline=$((SECONDS + SSM_POLL_SECONDS))
           while (( SECONDS < deadline )); do
-            if STATUS=$(aws ssm get-command-invocation \
+            # 명령 전체 상태와 대상·완료·오류 대수를 함께 확인한다.
+            if SUMMARY=$(aws ssm list-commands \
               --command-id "$COMMAND_ID" \
-              --instance-id "$APP_INSTANCE_ID" \
               --cli-connect-timeout 5 \
               --cli-read-timeout 10 \
-              --query Status --output text 2>/dev/null); then
+              --query 'Commands[0].[Status,TargetCount,CompletedCount,ErrorCount]' \
+              --output text 2>/dev/null); then
+              read -r STATUS TARGETS COMPLETED ERRORS <<< "$SUMMARY"
               case "$STATUS" in
                 Success)
-                  echo "배포 및 기동 확인 성공"
+                  print_invocations
+                  # 태그 대상은 0대여도 명령이 성공으로 끝나므로 대수를 직접 확인한다.
+                  if ! [[ "$TARGETS" =~ ^[0-9]+$ ]] || (( TARGETS < 1 )); then
+                    echo "::error::Name 태그가 ${APP_NAME_TAG}인 실행 중 인스턴스가 없습니다. 서버가 켜져 있는지 확인하세요."
+                    exit 1
+                  fi
+                  if [ "$ERRORS" != 0 ] || [ "$COMPLETED" != "$TARGETS" ]; then
+                    echo "::error::일부 인스턴스 배포 실패: 대상 ${TARGETS}, 완료 ${COMPLETED}, 오류 ${ERRORS}."
+                    exit 1
+                  fi
+                  echo "배포 및 기동 확인 성공: ${TARGETS}대"
                   exit 0
                   ;;
                 Failed|TimedOut|Cancelled)
-                  echo "::error::SSM 배포 실패: $STATUS. 서버 로그를 확인하세요."
+                  print_invocations
+                  echo "::error::SSM 배포 실패: $STATUS (대상 ${TARGETS}, 오류 ${ERRORS}). 서버 로그를 확인하세요."
                   exit 1
                   ;;
               esac
@@ -231,5 +255,6 @@ jobs:
             sleep 5
           done
 
+          print_invocations
           echo "::error::배포 결과 확인 시간 초과. SSM 명령 상태를 확인하세요."
           exit 1
