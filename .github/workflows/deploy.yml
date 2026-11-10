@@ -57,7 +57,7 @@ jobs:
     needs: ci
     if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: &deploy_job_timeout 60
 
     permissions:
       contents: read
@@ -153,8 +153,10 @@ jobs:
 
       - name: Deploy using SSM
         if: steps.latest.outputs.deploy == 'true'
-        timeout-minutes: 21
+        timeout-minutes: &ssm_step_timeout 21
         env:
+          DEPLOY_JOB_TIMEOUT_MINUTES: *deploy_job_timeout
+          SSM_STEP_TIMEOUT_MINUTES: *ssm_step_timeout
           BUCKET: ${{ steps.addresses.outputs.bucket }}
           KEY: ${{ steps.addresses.outputs.key }}
           IMAGE: ${{ steps.addresses.outputs.repository }}@${{ steps.image.outputs.digest }}
@@ -165,8 +167,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Leave 21 minutes for this step and a minute of job overhead.
-          if (( $(date +%s) - DEPLOY_JOB_STARTED_AT >= 23 * 60 )); then
+          # Reserve the full SSM step and a minute of job overhead.
+          latest_start_seconds=$(( (DEPLOY_JOB_TIMEOUT_MINUTES - SSM_STEP_TIMEOUT_MINUTES - 1) * 60 ))
+          if (( $(date +%s) - DEPLOY_JOB_STARTED_AT >= latest_start_seconds )); then
             echo "::error::배포 결과를 확인할 시간이 부족합니다. 새 SSM 명령을 전송하지 않습니다."
             exit 1
           fi

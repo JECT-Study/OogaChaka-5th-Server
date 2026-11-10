@@ -90,8 +90,10 @@ DB와 Redis 주소는 EC2에서 접근 가능한 주소를 사용한다.
 새 설정 검사와 이미지 다운로드를 마친 뒤 기존 컨테이너를 갱신한다.
 배포 스크립트가 8분을 넘기면 종료 신호를 보내고, 롤백에 최대 6분을 더 준다.
 SSM 실행 제한은 17분이며, GitHub Actions는 명령 전달 시간을 포함해 최대 19분 동안 상태 조회를 시도한다.
+배포 작업은 최대 60분이며, SSM 단계 21분과 작업 여유 1분을 확보할 수 있을 때만 배포 명령을 보낸다.
 이미 App EC2에서 배포가 진행 중이면 새 실행은 배포 잠금을 얻지 못하고 종료한다.
-다른 Compose 프로젝트의 `oogachaka-app`이 있으면 잠시 이름을 바꿔 보관한다.
+다른 Compose 프로젝트의 `oogachaka-app`이 있거나 기존 실행 설정이 불완전하면 컨테이너 이름을 잠시 바꿔 보관한다.
+보관할 컨테이너가 기본 `app` 프로젝트 소속이면, 새 컨테이너는 `ooga-app-migration` 프로젝트로 시작한다.
 새 버전의 기동이 확인되면 보관한 컨테이너를 정리하고, 실패하면 원래 이름과 실행 상태를 복구한다.
 기동 확인에 실패하면 이전 Compose·이미지 주소·실행 설정 복구를 시도한다.
 복구된 앱의 기동까지 확인한 경우에만 임시 백업을 삭제한다.
@@ -108,11 +110,11 @@ SSM 실행 제한은 17분이며, GitHub Actions는 명령 전달 시간을 포�
 App EC2에 SSM으로 접속한 뒤 실행한다.
 
 ```bash
-sudo docker compose --project-directory /opt/ooga/app ps -a
+sudo docker ps -a --filter 'name=^/oogachaka-app$'
 ```
 
 ```bash
-sudo docker compose --project-directory /opt/ooga/app logs --tail 60 app
+sudo docker logs --tail 60 oogachaka-app
 ```
 
 로그를 공유할 때 생성된 비밀번호·토큰 등 비밀값을 제거한다.
