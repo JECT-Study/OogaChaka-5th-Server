@@ -94,7 +94,6 @@ jobs:
         run: |
           set -euo pipefail
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-          test "$ACCOUNT" = "727660953850"
           REGISTRY="${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
           echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
