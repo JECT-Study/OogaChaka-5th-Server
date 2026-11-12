@@ -3,10 +3,8 @@
 Java 17을 사용한다. 처음 세팅한다면 아래 [한눈에 보기](#한눈에-보기)와
 [로컬 실행](#로컬-실행)만 순서대로 따라 하면 된다.
 
-현재 `feature/5-65-jasypt-config`에서 준비할 것은 DB·Flyway 접속정보, AES/HMAC 키,
-Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 후속 브랜치용 설정이므로
-지금 모든 값을 채울 필요는 없다. Redis 설정을 적는 것만으로 Redis 서버가 실행되지는 않으며,
-현재 브랜치에는 Redis 연동 의존성과 사용 코드가 없다.
+앱 시작에 필요한 것은 DB·Flyway 접속정보, AES/HMAC 키, JWT 서명 키, Jasypt 비밀번호다.
+로그인·갱신·로그아웃에는 Redis(6.2 이상)가 실행 중이어야 하며, 소셜 로그인은 사용할 제공자의 client-id를 채워야 동작한다.
 
 ## 한눈에 보기
 
@@ -39,8 +37,7 @@ Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 �
 서버와 CI는 아래 환경변수로 주입한다. 로컬 개발은 환경변수 대신
 `application-local.properties`에 같은 값을 적는다([로컬 실행](#로컬-실행) 참고).
 
-현재 앱 시작에 필요한 것은 Jasypt 비밀번호와 AES/HMAC 키다. JWT 및 외부 서비스 관련 변수는
-해당 후속 기능을 사용할 때 준비한다. `${변수:기본값}`은 변수를 등록하지 않으면 기본값을 사용하므로,
+앱 시작에는 Jasypt 비밀번호와 AES/HMAC 키, JWT_SECRET이 필요하다. `${변수:기본값}`은 변수를 등록하지 않으면 기본값을 사용하므로,
 일반 설정의 기본값이 환경에 맞는다면 모든 환경변수를 따로 등록할 필요는 없다.
 
 | 환경변수 | 형식과 용도 | 필요 시점 |
@@ -49,20 +46,12 @@ Jasypt 비밀번호다. JWT·Redis·소셜 로그인·FCM·비동기 푸시는 �
 | `AES_ENCRYPTION_KEY` | Base64로 인코딩한 무작위 32바이트 AES v1 키 | 모든 애플리케이션 시작 |
 | `HMAC_SOCIAL_ID_KEY` | Base64 32바이트 소셜 ID 조회 키 | 모든 애플리케이션 시작 |
 | `HMAC_DEVICE_TOKEN_KEY` | Base64 32바이트 디바이스 토큰 중복 검사 키 | 모든 애플리케이션 시작 |
-| `JWT_SECRET` | 별도 Base64 서명 키. 후속 jjwt 구현에서 검증하며 HS256 이상에 맞는 충분한 길이를 사용한다. | 인증 브랜치 |
+| `JWT_SECRET` | 독립된 Base64 서명 키. HS256용 최소 32바이트를 시작 시 검증한다. | 인증 브랜치 |
 | `AES_ACTIVE_VERSION` | 기본 `v1`. 교체 시 새 버전과 키 맵을 함께 설정한다. | 키 교체 |
-| `REDIS_HOST`, `REDIS_PORT`, `REDIS_DATABASE` | 기본 `localhost`, `6379`, `0` | 인증 브랜치 |
-| `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_SSL_ENABLED` | 기본 빈 값/빈 값/`false`. 비밀번호는 `ENC(...)`로 주입한다. | 인증 Redis에 필요할 때 |
-| `JWT_ISSUER` | 기본 `oogachaka` | issuer 변경 |
-| `GOOGLE_OAUTH_ENABLED`, `KAKAO_OAUTH_ENABLED`, `NAVER_OAUTH_ENABLED` | 기본 `false`. 사용할 제공자만 활성화한다. | 인증 브랜치 |
-| `{GOOGLE,KAKAO,NAVER}_CLIENT_ID` | 제공자 콘솔에서 발급한 client ID. 카카오는 REST API 키 | 제공자 활성화 |
-| `{GOOGLE,KAKAO,NAVER}_CLIENT_SECRET` | 각 제공자 secret을 암호화한 `ENC(...)`. 카카오에서 secret을 사용하지 않으면 비워 둔다. | 제공자 활성화 |
+| `REDIS_HOST`, `REDIS_PORT` | 기본 `localhost`, `6379` | 인증 |
+| `REDIS_PASSWORD` | 기본 빈 값. 필요하면 `ENC(...)`로 주입한다. | 비밀번호가 있는 Redis |
 | `{GOOGLE,KAKAO,NAVER}_REDIRECT_URI` | 제공자 콘솔에 등록한 프런트 콜백 URI와 정확히 일치 | 제공자 활성화 |
-| `CORS_ALLOWED_ORIGINS` | 쉼표로 구분한 명시적 origin. 기본 Capacitor `capacitor://localhost`, `http://localhost`, `https://localhost` | 웹/앱 환경에 맞게 설정 |
-| `FCM_ENABLED`, `FCM_PROJECT_ID` | 기본 `false`/빈 값. false이면 후속 구현이 Firebase 초기화를 생략한다. | 푸시 브랜치 |
-| `FCM_SERVICE_ACCOUNT_PATH` | 저장소 밖의 서비스 계정 JSON 절대경로 | 파일 방식의 FCM 인증 |
-| `FCM_SERVICE_ACCOUNT_JSON` | JSON 한 줄 또는 그 값을 암호화한 `ENC(...)` | 내용 주입 방식의 FCM 인증 |
-| `GOOGLE_APPLICATION_CREDENTIALS` | 위 두 FCM 설정이 비어 있을 때 Google ADC에서 읽는 외부 JSON 파일 경로 | ADC 인증 |
+| `CORS_ALLOWED_ORIGINS` | 쉼표로 구분한 명시적 origin. 기본 로컬 프런트 `http://localhost:5173`, Capacitor `capacitor://localhost`, `http://localhost`, `https://localhost` | 웹/앱 환경에 맞게 설정 |
 
 AES 키와 두 HMAC 키는 디코딩 결과가 모두 서로 달라야 한다. 이전 AES 버전의 키도 HMAC 키와
 같으면 시작에 실패한다. 키 누락, 잘못된 Base64, 32바이트가 아닌 값도 시작에 실패한다.
@@ -80,7 +69,7 @@ Jasypt 비밀번호를 사용해야 한다**(아래 3단계 참고).
 ## 로컬 실행
 
 처음 한 번만 1~3단계를 하고, 이후에는 4단계(실행)만 하면 된다.
-**IDE 실행 설정이나 셸에 환경변수를 넣을 필요가 없다.** 로컬 값은 전부 파일 하나에 들어간다.
+로컬 값은 전부 파일 하나에 들어간다. 파일 대신 IntelliJ 환경변수를 쓰려면 4단계 아래의 "다른 방법"을 따른다.
 
 ### 1단계. 로컬 설정 파일 만들기
 
@@ -105,8 +94,6 @@ app.crypto.hmac-device-token-key=REPLACE_WITH_DEVICE_HMAC_KEY
 app.jwt.secret=REPLACE_WITH_JWT_KEY
 jasypt.encryptor.password=REPLACE_WITH_JASYPT_PASSWORD
 ```
-
-JWT 키는 후속 인증 기능에서 사용하며 현재 5-65 기동의 필수값은 아니다.
 
 - 이 파일은 `.gitignore`에 등록되어 있어 Git에 올라가지 않는다. 그래서 값을 **평문**으로 적어도 된다.
   확인하려면 `git check-ignore -v src/main/resources/application-local.properties`를 실행한다.
@@ -144,27 +131,16 @@ Flyway 계정은 스키마 변경과 Flyway 이력 관리에 사용한다. URL�
 전달받아 1단계 파일의 해당 항목에 넣는다. 팀원마다 새 값을 만들면 기존 데이터나 공통 암호문을
 읽지 못할 수 있다.
 
-**팀의 최초 키를 정하거나 독립된 환경의 키를 새로 만들 때만** 아래 명령을 사용한다.
-저장소 루트의 터미널에서 실행하면 파일에 붙여 넣을 5줄이 출력된다.
+**키를 새로 추가하거나 처음 정할 때만** 아래 명령으로 값을 만든다. 실행할 때마다 Base64로 인코딩한
+무작위 32바이트 값이 한 줄 출력되므로, 키 하나마다 한 번씩 실행해 서로 다른 값을 넣는다.
 
 ```sh
-for k in app.crypto.aes-keys.v1 app.crypto.hmac-social-id-key app.crypto.hmac-device-token-key app.jwt.secret jasypt.encryptor.password; do
-  echo "$k=$(openssl rand -base64 32)"
-done
+openssl rand -base64 32
 ```
 
-출력 예시(형태만 참고, 이 값을 쓰지 않는다):
+출력 예시(형태만 참고, 이 값을 쓰지 않는다): `q3N8x1+Yb0kP2c6ZsV9tLmR4wE7hJdA5uFgTnXoKiQ8=`
 
-```properties
-app.crypto.aes-keys.v1=q3N8x1+Yb0kP2c6ZsV9tLmR4wE7hJdA5uFgTnXoKiQ8=
-app.crypto.hmac-social-id-key=...
-app.crypto.hmac-device-token-key=...
-app.jwt.secret=...
-jasypt.encryptor.password=...
-```
-
-`application-local.properties`의 AES 키, HMAC 키 2개, JWT 키, Jasypt 비밀번호에 해당하는 기존
-5개 항목을 출력된 5줄로 교체한다. 이미 공유받은 값을 입력했다면 새로 생성하거나 교체할 필요는 없다.
+만든 값은 팀원에게 비공개로 공유하고 모두 같은 값을 넣는다. 이미 공유받은 값을 입력했다면 새로 만들 필요는 없다.
 
 | 파일에 적는 키 | 용도 | 서버·CI에서 쓰는 환경변수 이름 |
 | --- | --- | --- |
@@ -213,6 +189,20 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 | `Failed to bind properties under 'spring.datasource.url'` 등 `ENC(...)` 값이 들어간 키의 바인딩 실패 | `ENC(...)`를 만든 비밀번호와 지금 쓰는 비밀번호가 다르다. 셸에 `JASYPT_ENCRYPTOR_PASSWORD`가 남아 있으면 파일보다 그 값이 우선한다 | 팀 비밀번호로 맞추고, 셸에 등록된 환경변수가 로컬 파일의 값을 덮어쓰는지 확인한다 |
 
 Gradle이 Java 17을 찾지 못하면 `JAVA_HOME`을 Java 17 경로로 지정한 뒤 실행한다.
+
+### 다른 방법: 로컬 파일 없이 IntelliJ 환경변수로 넣기
+
+`application-local.properties` 대신 `Run > Edit Configurations > OogachakaApplication`의
+**Environment variables**에 키 5개를 넣어도 된다. 이름은 서버와 같다.
+
+```
+JASYPT_ENCRYPTOR_PASSWORD=...;AES_ENCRYPTION_KEY=...;HMAC_SOCIAL_ID_KEY=...;HMAC_DEVICE_TOKEN_KEY=...;JWT_SECRET=...
+```
+
+- 이 방법은 local 프로필이 필요 없다. `application.properties`는 수정하지 않는다.
+- DB는 `application.properties`의 공용 DB(`ENC(...)`)로 연결된다. 머지 전 Flyway 파일이 있는 브랜치를
+  실행하면 그 SQL이 공용 DB에 바로 적용되므로 주의한다.
+- 터미널의 `bootRun`과 `jasyptEncrypt`에는 IntelliJ 설정이 적용되지 않는다. 필요하면 같은 값을 셸 환경변수로 넘긴다.
 
 앱 시작은 Flyway를 실행한다. V2는 빈 `device_token` 테이블을 전제로 한다. 기존 행이 있으면
 NOT NULL/UNIQUE 추가가 실패할 수 있으므로 적용 전에 별도 백필·중복 정리를 준비한다.
@@ -284,18 +274,22 @@ WHERE TABLE_SCHEMA = DATABASE()
 접속정보를 새로 등록하거나 교체할 때 사용한다. 여기서 원문은 DB 주소·계정·DB 비밀번호이고,
 이를 잠그고 푸는 열쇠는 별도의 Jasypt 비밀번호다.
 
-1. 내 `application-local.properties`의 `jasypt.encryptor.password`가 **팀에서 정한 Jasypt 비밀번호**인지
-   확인한다. 암호화 도구는 환경변수 `JASYPT_ENCRYPTOR_PASSWORD`를 먼저 보고, 없으면 이 파일에서
-   비밀번호를 읽는다. 앱·DB·Flyway는 시작하지 않는다.
-2. 저장소 루트에서 아래를 실행한다. 첫 줄을 실행하면 입력 프롬프트가 뜨고, 암호화할 값을 붙여 넣고
-   Enter를 누른다. 입력한 값은 화면과 셸 이력에 남지 않는다.
+1. 암호화 도구는 **팀에서 정한 Jasypt 비밀번호**를 환경변수 `JASYPT_ENCRYPTOR_PASSWORD`에서 먼저 찾고,
+   없으면 `application-local.properties`의 `jasypt.encryptor.password`에서 읽는다. IntelliJ 실행 설정의
+   VM 옵션·환경변수는 읽지 않는다. 앱·DB·Flyway는 시작하지 않는다.
+2. 저장소 루트에서 아래를 실행한다. 값은 작은따옴표로 감싼다.
 
    ```sh
-   read -rs 'JASYPT_INPUT?암호화할 값 한 줄: '
-   printf '\n'
-   printf '%s\n' "$JASYPT_INPUT" | ./gradlew -q --console=plain jasyptEncrypt
-   unset JASYPT_INPUT
+   ./gradlew -q jasyptEncrypt -Pvalue='암호화할값'
    ```
+
+   local 파일 없이 실행한다면 비밀번호를 환경변수로 함께 넘긴다.
+
+   ```sh
+   JASYPT_ENCRYPTOR_PASSWORD='팀_Jasypt_비밀번호' ./gradlew -q jasyptEncrypt -Pvalue='암호화할값'
+   ```
+
+   실행한 명령은 셸 이력에 남는다. 실제 비밀값을 넣었다면 실행 후 `~/.zsh_history`에서 그 줄을 지운다.
 
 3. `ENC(...)` 형태의 한 줄이 출력된다. 괄호까지 전부 복사해 `application.properties`의 해당 값을 바꾼다.
 
@@ -319,37 +313,33 @@ WHERE TABLE_SCHEMA = DATABASE()
 - OAuth secret, Redis 비밀번호, 내용으로 주입하는 서비스 계정 JSON도 같은 방식이다. 서버 환경변수의
   값으로 `ENC(...)`를 넣어도 풀린다. 여러 줄 JSON은 한 줄 JSON으로 바꾼 뒤 입력한다.
 - AES/HMAC/JWT 키와 Jasypt 비밀번호 자체는 Jasypt로 감싸지 않는다.
-- `./gradlew -q jasyptEncrypt -Pvalue=TEST_ONLY_DUMMY_VALUE`처럼 값을 바로 넘길 수도 있지만 셸 이력과
-  프로세스 인자에 남으므로 더미 값 확인에만 쓴다.
 
 규격은 `PBEWITHHMACSHA512ANDAES_256`, 키 유도 10,000회, 무작위 salt/IV, Base64다.
 `JasyptEncryptorFactory`를 CLI와 `jasyptStringEncryptor` 빈이 공유한다. 알고리즘 설정은 이
 팩토리에 고정되어 있다. 기존 다른 규격의 암호문은 이 도구로 다시 암호화한다.
 
-## 후속 브랜치 설정 계약
+## 인증 설정 계약
 
-현재 브랜치는 Redis/jjwt/Firebase 의존성과 실제 인증·푸시 실행기를 추가하지 않는다.
-후속 구현은 `application.properties`의 키를 그대로 `@ConfigurationProperties`로 바인딩한다.
-인증 브랜치는 `JWT_SECRET` 누락·빈 값·Base64 오류·선택한 서명 알고리즘의 최소 키 길이 미달을
-애플리케이션 시작 시 거부해야 한다. HS256은 디코딩 후 최소 32바이트이며, 다른 알고리즘은 해당
-최소 길이를 적용한다. 이 브랜치는 설정 골격만 제공하며 JWT 검증 구현은 인증 브랜치의 책임이다.
-최소 키 길이 기준은 [JWA의 HMAC 규격](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2)을 따른다.
+인증 구현은 Redis/jjwt 의존성과 `app.jwt`/`app.oauth`/`app.cors` 바인딩을 제공한다.
+JWT_SECRET 누락·빈 값·Base64 오류·디코딩 후 32바이트 미만 키는 시작 시 거부한다.
+서명 알고리즘은 HS256으로 고정하며 최소 키 길이 기준은
+[JWA의 HMAC 규격](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2)을 따른다.
+Redis는 GETDEL을 지원하는 6.2 이상이어야 한다. OAuth 제공자는 client-id가 비어 있으면 사용하지 않는다.
+구글·카카오 S256 PKCE, 인증 응답 계약, Redis 키/운영 조건 및 제공자별 콘솔 설정은
+[인증 API 가이드](auth-api.md)를 참고한다.
 
 | 설정 접두어 | 계약 |
 | --- | --- |
-| `app.jwt` | `secret`, `access-token-ttl=30m`, `refresh-token-ttl=14d`, `issuer` |
+| `app.jwt` | `secret`, `access-token-ttl=30m`, `refresh-token-ttl=14d` |
 | `app.oauth` | `state-ttl=5m`(Redis의 일회성 state), `connect-timeout=3s`, `read-timeout=5s` |
-| `app.oauth.providers.{google,kakao,naver}` | `enabled`, `client-id`, `client-secret`, `redirect-uri`, `authorization-uri`, `token-uri`, `user-info-uri`, `scopes` |
-| `app.cors` | `allowed-origins` 목록, `allow-credentials=true`. 운영 origin과 실제 Capacitor 설정을 일치시킨다. |
-| `app.fcm` | `enabled`, `project-id`, `service-account-path`, `service-account-json`. path/json은 동시에 지정하지 않는다. 둘 다 비어 있으면 ADC를 사용한다. |
-| `app.async.push` | `core-pool-size=2`, `max-pool-size=4`, `queue-capacity=100`, `thread-name-prefix=push-`, `await-termination=30s` |
+| `app.oauth.providers.{google,kakao,naver}` | `client-id`(비어 있으면 미사용), `client-secret`, `redirect-uri`, `authorization-uri`, `token-uri`, `user-info-uri`, `scopes` |
+| `app.cors` | `allowed-origins` 목록. 운영 origin과 실제 Capacitor 설정을 일치시킨다. |
 
-OAuth scope는 앱 콘솔에서 승인된 권한에 맞춰 환경별로 조정한다. 네이버 동의 항목은 콘솔에서
+OAuth scope는 코드가 읽는 값(닉네임·이메일)과 콘솔에서 승인된 동의항목에 맞춘다. 네이버 동의 항목은 콘솔에서
 관리하므로 기본 scopes는 비어 있다. 각 제공자 정보는
 [Google](https://developers.google.com/identity/openid-connect/openid-connect),
 [Kakao](https://developers.kakao.com/docs/en/rest-api/reference),
 [Naver](https://developers.naver.com/docs/login/api/api.md)의 엔드포인트를 기준으로 했다.
-FCM 인증 선택은 [Firebase Admin 설정](https://firebase.google.com/docs/admin/setup)을 따른다.
 
 공통 API 사용 예시:
 
@@ -425,13 +415,13 @@ Secrets 등록과 위 `env` 설정만으로 운영 서버의 환경변수가 자
 ## 검증 범위와 테스트 실행
 
 아래는 작성된 테스트의 범위다. 컴파일·실행 여부와 결과는 각 PR에 별도로 기록한다.
-단위 테스트에는 AES 왕복/IV/변조/잘못된 키/버전 교체/null 및 HMAC 결정성/키 분리/입력 규칙,
-설정 바인딩/시작 실패 조건, Converter의 암복호화 위임, 암호화 오류의 공통 응답 처리를 작성했다.
+단위 테스트에는 AES 왕복/IV/변조/잘못된 키/버전 교체/null, HMAC 결정성/키 분리/입력 규칙,
+암호화·JWT 설정의 시작 실패 조건, JWT 발급·검증, 소셜 로그인·토큰 서비스, 보안 필터와 MVC 인증 응답을 작성했다.
 키는 `TestCryptoKeys`에서 생성한 테스트 전용 더미 값을 사용한다.
 
-테스트 실행 명령은 `./gradlew test`다. 외부 DB나 별도 서버 없이 실행한다.
-현재 테스트에는 실제 DB의 마이그레이션, JPA Converter 주입, 컬럼 용량·제약조건 검증이 포함되지 않는다.
-해당 항목은 실제 엔티티 구현과 테스트 DB 구성이 준비되면 검증한다.
+`./gradlew test`는 외부 DB나 별도 서버 없이 단위·MVC 테스트를 실행한다.
+Docker가 필요한 통합 테스트와 전용 실행 작업·의존성은 유지하지 않는다.
+현재 자동 테스트는 실제 Redis/MySQL 동작, JPA Converter 주입, 암호문 컬럼 용량을 검증하지 않는다.
 
 ## Jasypt 선택 근거
 

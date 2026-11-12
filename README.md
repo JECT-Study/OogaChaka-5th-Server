@@ -21,3 +21,4 @@ docker compose down -v    # 데이터까지 삭제하고 초기화
 - 도커 DB는 내 PC에만 있어 마이그레이션을 마음대로 실행하고 `down -v`로 처음부터 다시 확인할 수 있습니다.
 
 접속 정보와 `application-local.properties` 설정은 [환경 설정 가이드](docs/environment-setup.md)의 2단계를 참고하세요.
+소셜 로그인·JWT 갱신/로그아웃과 제공자 콘솔 준비는 [인증 API 가이드](docs/auth-api.md)를 참고하세요.

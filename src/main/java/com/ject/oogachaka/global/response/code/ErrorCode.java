@@ -21,8 +21,14 @@ public enum ErrorCode {
     CRYPTO_OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "CRYPTO_OPERATION_FAILED", "암호화 처리 중 오류가 발생했습니다."),
 
     // 도메인 오류 코드는 아래에 도메인별로 추가한다.
+    AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED", "인증 토큰이 만료되었습니다."),
+    AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID", "유효하지 않은 인증 토큰입니다."),
+    AUTH_PROVIDER_UNSUPPORTED(HttpStatus.BAD_REQUEST, "AUTH_PROVIDER_UNSUPPORTED", "지원하지 않는 소셜 로그인입니다."),
+    AUTH_SOCIAL_LOGIN_FAILED(HttpStatus.BAD_REQUEST, "AUTH_SOCIAL_LOGIN_FAILED", "소셜 로그인에 실패했습니다. 로그인을 다시 시작해 주세요."),
+
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "존재하지 않는 사용자입니다."),
     DUPLICATE_USER(HttpStatus.CONFLICT, "DUPLICATE_USER", "중복된 사용자입니다."),
+
     INVALID_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_SCHEDULE_TIME", "올바르지 않은 일정 시간입니다.");
 
     private final HttpStatus httpStatus;

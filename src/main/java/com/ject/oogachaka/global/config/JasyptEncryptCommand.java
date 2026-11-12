@@ -10,8 +10,10 @@ import java.util.Properties;
 import org.jasypt.encryption.StringEncryptor;
 
 /**
- * Spring 애플리케이션과 DB를 시작하지 않고 설정값 한 줄을 암호화한다.
+ * application.properties에 넣을 ENC(...) 값을 만드는 개발자용 도구다. 앱 실행 중에는 쓰이지 않는다.
+ * 프로젝트 루트에서 ./gradlew -q jasyptEncrypt -Pvalue='암호화할값' 을 실행하면 ENC(...)가 출력된다.
  * 비밀번호는 환경변수 JASYPT_ENCRYPTOR_PASSWORD를 먼저 보고, 없으면 application-local.properties에서 읽는다.
+ * 자세한 절차는 docs/environment-setup.md의 "공용 값 암호화" 항목을 참고한다.
  */
 public final class JasyptEncryptCommand {
 

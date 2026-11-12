@@ -7,6 +7,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -15,7 +17,9 @@ import lombok.NoArgsConstructor;
  */
 @Getter
 @Entity
+@Builder(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Family extends BaseTimeEntity {
 
     @Id
@@ -26,11 +30,9 @@ public class Family extends BaseTimeEntity {
     @Column(length = 64, unique = true)
     private String inviteCode;
 
-    private Family(String inviteCode) {
-        this.inviteCode = inviteCode;
-    }
-
     public static Family create(String inviteCode) {
-        return new Family(inviteCode);
+        return Family.builder()
+                .inviteCode(inviteCode)
+                .build();
     }
 }
