@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 /**
  * 제공자의 원본 문자열을 UTF-8로 처리한다. trim, 대소문자 변경, Unicode 정규화를 하지 않는다.
  * 조회와 저장은 동일한 원본 및 용도를 전달하며, 이미 생성된 해시는 다시 입력하지 않는다.
+ * 팀의 원본 소셜 ID 미보관 정책에 따라 ID를 조회용 HMAC으로 바꾸는 공통 서비스
  */
 @Service
 @RequiredArgsConstructor
