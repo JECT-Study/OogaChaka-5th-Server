@@ -1,56 +1,259 @@
-name: Deploy app (Spring Boot)
+name: Build and deploy app
 
 on:
+  pull_request:
+    branches: [dev]
   push:
     branches: [dev]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
-      - ".github/ISSUE_TEMPLATE/**"
-      - ".github/pull_request_template.md"
-      - ".coderabbit.yaml"
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
-
-concurrency:
-  group: deploy-app
-  cancel-in-progress: false
 
 env:
   AWS_REGION: ap-northeast-2
-  TARGET_NAME_TAG: ooga_chaka_app
 
 jobs:
-  deploy:
+  ci:
+    name: Test and build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
 
-      # (임시) OIDC 로그인 실패 원인 확인용 - 해결되면 이 단계는 삭제
-      - name: Debug OIDC claims
-        env:
-          ROLE: ${{ vars.AWS_ROLE_ARN }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Check deployment script
+        run: bash -n deploy.sh
+
+      - name: Test and build executable JAR
+        run: bash ./gradlew --no-daemon clean test bootJar
+
+      - name: Check local configuration is excluded
         run: |
-          echo "role=[${ROLE}]"
-          TOKEN=$(curl -sH "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r .value)
-          python3 -c '
-          import sys, json, base64
-          p = sys.argv[1].split(".")[1]
-          p += "=" * (-len(p) % 4)
-          c = json.loads(base64.urlsafe_b64decode(p))
-          for k in ("sub", "aud", "repository", "ref", "event_name", "job_workflow_ref"):
-              print(k, "=", c.get(k))
-          ' "${TOKEN}"
-          
-      # 저장소 Settings > Secrets and variables > Actions > Variables 에 AWS_ROLE_ARN 등록
-      - uses: aws-actions/configure-aws-credentials@v4
+          python3 - <<'PY'
+          import zipfile
+
+          path = "build/libs/oogachaka-0.0.1-SNAPSHOT.jar"
+          with zipfile.ZipFile(path) as jar:
+              forbidden = "BOOT-INF/classes/application-local.properties"
+              if forbidden in jar.namelist():
+                  raise SystemExit("로컬 설정 파일이 JAR에 포함되어 있습니다.")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: build/libs/oogachaka-0.0.1-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 3
+
+  deploy:
+    name: Deploy to App EC2
+    needs: ci
+    if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: &deploy_job_timeout 60
+
+    permissions:
+      contents: read
+      id-token: write
+
+    concurrency:
+      group: deploy-app
+      cancel-in-progress: false
+      queue: max
+
+    env:
+      # 인스턴스 ID 대신 Name 태그로 대상을 찾는다. 배포 역할도 이 태그의 EC2에만 명령을 허용한다.
+      APP_NAME_TAG: ooga_chaka_app
+
+    steps:
+      - name: Record deployment job start
+        run: echo "DEPLOY_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: build/libs
+
+      - name: Authenticate to AWS using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
- 
+      - name: Prepare deployment addresses
+        id: addresses
+        run: |
+          set -euo pipefail
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+          echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
+          echo "repository=$REGISTRY/oogachaka_app" >> "$GITHUB_OUTPUT"
+          echo "bucket=ooga-chaka-deploy-${ACCOUNT}" >> "$GITHUB_OUTPUT"
+          echo "key=app/${GITHUB_SHA}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Log Docker in to ECR
+        env:
+          REGISTRY: ${{ steps.addresses.outputs.registry }}
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$REGISTRY"
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ARM64 image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.addresses.outputs.repository }}:${{ github.sha }}
+
+      - name: Upload deployment files
+        env:
+          BUCKET: ${{ steps.addresses.outputs.bucket }}
+          KEY: ${{ steps.addresses.outputs.key }}
+        run: |
+          set -euo pipefail
+          tar -czf "$RUNNER_TEMP/app.tar.gz" docker-compose.yml deploy.sh
+          aws s3 cp "$RUNNER_TEMP/app.tar.gz" "s3://$BUCKET/$KEY" \
+            --sse AES256 --only-show-errors
+
+      - name: Check latest dev commit
+        id: latest
+        run: |
+          set -euo pipefail
+          LATEST=$(git ls-remote origin refs/heads/dev | cut -f1)
+          test -n "$LATEST"
+
+          if [ "$LATEST" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "최신 dev 커밋이 아니므로 배포를 건너뜁니다."
+          fi
+
+      - name: Deploy using SSM
+        if: steps.latest.outputs.deploy == 'true'
+        timeout-minutes: &ssm_step_timeout 21
+        env:
+          DEPLOY_JOB_TIMEOUT_MINUTES: *deploy_job_timeout
+          SSM_STEP_TIMEOUT_MINUTES: *ssm_step_timeout
+          BUCKET: ${{ steps.addresses.outputs.bucket }}
+          KEY: ${{ steps.addresses.outputs.key }}
+          IMAGE: ${{ steps.addresses.outputs.repository }}@${{ steps.image.outputs.digest }}
+          SSM_DELIVERY_SECONDS: "60"
+          SSM_EXECUTION_SECONDS: "1020"
+          SSM_POLL_SECONDS: "1140"
+          AWS_MAX_ATTEMPTS: "1"
+        run: |
+          set -euo pipefail
+
+          # Reserve the full SSM step and a minute of job overhead.
+          latest_start_seconds=$(( (DEPLOY_JOB_TIMEOUT_MINUTES - SSM_STEP_TIMEOUT_MINUTES - 1) * 60 ))
+          if (( $(date +%s) - DEPLOY_JOB_STARTED_AT >= latest_start_seconds )); then
+            echo "::error::배포 결과를 확인할 시간이 부족합니다. 새 SSM 명령을 전송하지 않습니다."
+            exit 1
+          fi
+
+          cat > remote.sh <<'REMOTE'
+          [ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
+          set -euo pipefail
+          umask 077
+          export AWS_DEFAULT_REGION=ap-northeast-2
+          STAGE="$(mktemp -d /tmp/ooga-app.XXXXXX)"
+          trap 'rm -rf "$STAGE"' EXIT
+          timeout --kill-after=10s 90s \
+            aws s3 cp "s3://__BUCKET__/__KEY__" "$STAGE/app.tar.gz" --only-show-errors
+          timeout --kill-after=5s 30s tar -xzf "$STAGE/app.tar.gz" -C "$STAGE"
+          # Send TERM after 8 minutes, then allow up to 6 minutes for rollback.
+          timeout --kill-after=360s 480s bash "$STAGE/deploy.sh" "__IMAGE__"
+          REMOTE
+
+          sed -i \
+            -e "s|__BUCKET__|${BUCKET}|g" \
+            -e "s|__KEY__|${KEY}|g" \
+            -e "s|__IMAGE__|${IMAGE}|g" remote.sh
+
+          jq -Rs --arg execution_timeout "$SSM_EXECUTION_SECONDS" \
+            '{commands: [.], executionTimeout: [$execution_timeout]}' \
+            remote.sh > parameters.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --targets "Key=tag:Name,Values=${APP_NAME_TAG}" \
+            --parameters file://parameters.json \
+            --timeout-seconds "$SSM_DELIVERY_SECONDS" \
+            --cli-connect-timeout 5 \
+            --cli-read-timeout 10 \
+            --comment "app ${GITHUB_SHA:0:7}" \
+            --query Command.CommandId --output text)
+
+          echo "SSM command: $COMMAND_ID (tag:Name=${APP_NAME_TAG})"
+
+          # 태그에 해당하는 인스턴스별 결과를 출력한다.
+          print_invocations() {
+            aws ssm list-command-invocations \
+              --command-id "$COMMAND_ID" \
+              --cli-connect-timeout 5 \
+              --cli-read-timeout 10 \
+              --query 'CommandInvocations[].[InstanceId,Status]' \
+              --output text 2>/dev/null || true
+          }
+
+          deadline=$((SECONDS + SSM_POLL_SECONDS))
+          while (( SECONDS < deadline )); do
+            # 명령 전체 상태와 대상·완료·오류 대수를 함께 확인한다.
+            if SUMMARY=$(aws ssm list-commands \
+              --command-id "$COMMAND_ID" \
+              --cli-connect-timeout 5 \
+              --cli-read-timeout 10 \
+              --query 'Commands[0].[Status,TargetCount,CompletedCount,ErrorCount]' \
+              --output text 2>/dev/null); then
+              read -r STATUS TARGETS COMPLETED ERRORS <<< "$SUMMARY"
+              case "$STATUS" in
+                Success)
+                  print_invocations
+                  # 태그 대상은 0대여도 명령이 성공으로 끝나므로 대수를 직접 확인한다.
+                  if ! [[ "$TARGETS" =~ ^[0-9]+$ ]] || (( TARGETS < 1 )); then
+                    echo "::error::Name 태그가 ${APP_NAME_TAG}인 실행 중 인스턴스가 없습니다. 서버가 켜져 있는지 확인하세요."
+                    exit 1
+                  fi
+                  if [ "$ERRORS" != 0 ] || [ "$COMPLETED" != "$TARGETS" ]; then
+                    echo "::error::일부 인스턴스 배포 실패: 대상 ${TARGETS}, 완료 ${COMPLETED}, 오류 ${ERRORS}."
+                    exit 1
+                  fi
+                  echo "배포 및 기동 확인 성공: ${TARGETS}대"
+                  exit 0
+                  ;;
+                Failed|TimedOut|Cancelled)
+                  print_invocations
+                  echo "::error::SSM 배포 실패: $STATUS (대상 ${TARGETS}, 오류 ${ERRORS}). 서버 로그를 확인하세요."
+                  exit 1
+                  ;;
+              esac
+            fi
+            sleep 5
+          done
+
+          print_invocations
+          echo "::error::배포 결과 확인 시간 초과. SSM 명령 상태를 확인하세요."
+          exit 1
