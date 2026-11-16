@@ -48,8 +48,9 @@ cleanup() {
 trap cleanup EXIT
 
 wait_for_app() {
+    local mode="${1:-deploy}"
     local successes=0
-    local attempt running status
+    local attempt running status legacy_status
 
     for attempt in $(seq 1 60); do
         running="$(docker inspect \
@@ -57,9 +58,16 @@ wait_for_app() {
 
         status="$(curl --connect-timeout 2 --max-time 3 \
             -s -o /dev/null -w '%{http_code}' \
-            http://127.0.0.1:8080/ || true)"
+            http://127.0.0.1:8080/health || true)"
 
-        if [ "$running" = true ] && [ "$status" = 401 ]; then
+        legacy_status=""
+        if [ "$mode" = rollback ] && { [ "$status" = 404 ] || [ "$status" = 401 ]; }; then
+            legacy_status="$(curl --connect-timeout 2 --max-time 3 \
+                -s -o /dev/null -w '%{http_code}' \
+                http://127.0.0.1:8080/ || true)"
+        fi
+
+        if [ "$running" = true ] && { [ "$status" = 200 ] || [ "$legacy_status" = 401 ]; }; then
             successes=$((successes + 1))
             if [ "$successes" -ge 3 ]; then
                 return 0
@@ -71,6 +79,8 @@ wait_for_app() {
         sleep 2
     done
 
+    printf '[deploy] 기동 확인 실패 (%s): container_running=%s, /health HTTP=%s, / HTTP=%s\n' \
+        "$mode" "${running:-unknown}" "${status:-000}" "${legacy_status:-not-checked}" >&2
     return 1
 }
 
@@ -124,7 +134,7 @@ restore_legacy_container() {
     fi
 
     if [ "$LEGACY_RUNNING" = true ]; then
-        docker start "$LEGACY_CONTAINER" && wait_for_app
+        docker start "$LEGACY_CONTAINER" && wait_for_app rollback
     fi
 }
 
@@ -158,7 +168,7 @@ rollback() {
            [ -f "$DEST/.env" ]; then
             { prepare_rollback_image &&
                 docker compose -p app --project-directory "$DEST" \
-                    up -d --no-deps --pull never app && wait_for_app; } || restore_failed=1
+                    up -d --no-deps --pull never app && wait_for_app rollback; } || restore_failed=1
         else
             restore_failed=1
         fi
@@ -238,8 +248,6 @@ fi
 echo "[deploy] 컨테이너 갱신"
 docker compose -p "$APP_PROJECT" --project-directory "$DEST" up -d --no-deps app
 
-# 현재 기본 인증의 401 응답으로 기동 여부를 확인한다.
-# 전용 헬스 체크 API가 생기면 경로와 성공 코드를 변경한다.
 echo "[deploy] 기동 확인"
 wait_for_app
 
