@@ -111,8 +111,10 @@ Flyway 계정은 스키마 변경과 Flyway 이력 관리에 사용한다. URL�
 - SSH 터널로 공용 DB에 연결한다면 터널을 켜고 **로컬 수신 포트**를 URL에 적는다.
   예를 들어 터널이 `13306`에서 열렸다면 `jdbc:mysql://localhost:13306/oogachaka`를 사용한다.
 - 공용 DB에 직접 연결한다면 해당 DB의 호스트·포트를 적는다.
-- 독립된 로컬 MySQL을 사용한다면 그 서버에 DB를 만들고 해당 주소를 적는다. 로컬 MySQL 설치가
-  모든 팀원에게 필수인 것은 아니다.
+- **로컬 도커 DB(권장)**: 프로젝트 루트에서 `docker compose up -d`로 MySQL 8.4와 Redis를 띄운다.
+  URL은 `jdbc:mysql://localhost:3306/oogachaka`, 앱 계정은 `app`/`app`, Flyway 계정은 `migrator`/`migrator`다.
+  첫 실행 때 V1부터 전부 적용되며, `docker compose down -v`로 데이터까지 지우고 다시 시작할 수 있다.
+  이미 로컬에서 MySQL(3306)이나 Redis(6379)를 띄워 두었다면 먼저 끈다.
 
 공통 파일의 운영용 주소는 **운영 앱이 실행되는 환경 기준**이다. 운영 앱과 MySQL이 같은 서버에서
 직접 실행된다면 `jdbc:mysql://localhost:3306/oogachaka`를 사용할 수 있다. 내 PC의 SSH 터널 주소와
