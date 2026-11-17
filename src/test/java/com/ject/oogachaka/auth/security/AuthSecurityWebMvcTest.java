@@ -20,6 +20,7 @@ import com.ject.oogachaka.auth.token.JwtClaims;
 import com.ject.oogachaka.auth.token.JwtTokenProvider;
 import com.ject.oogachaka.global.config.CorsProperties;
 import com.ject.oogachaka.global.config.SecurityConfig;
+import com.ject.oogachaka.global.controller.HealthController;
 import com.ject.oogachaka.global.exception.GlobalExceptionHandler;
 import com.ject.oogachaka.global.exception.BusinessException;
 import com.ject.oogachaka.global.response.ApiResponse;
@@ -41,10 +42,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 실제 MVC·Security 설정으로 API의 공개 범위, 인증 응답과 CORS를 검증한다. JWT 검증과 업무 서비스는 목 객체로 대체한다. */
-@WebMvcTest(controllers = {AuthController.class, AuthSecurityWebMvcTest.ProbeController.class},
+@WebMvcTest(controllers = {AuthController.class, HealthController.class, AuthSecurityWebMvcTest.ProbeController.class},
     properties = {"app.cors.allowed-origins=https://app.example"})
 @Import({SecurityConfig.class, JsonSecurityHandler.class, GlobalExceptionHandler.class,
-    AuthSecurityWebMvcTest.PropertiesConfig.class, AuthController.class, AuthSecurityWebMvcTest.ProbeController.class})
+    AuthSecurityWebMvcTest.PropertiesConfig.class, AuthController.class, HealthController.class,
+    AuthSecurityWebMvcTest.ProbeController.class})
 class AuthSecurityWebMvcTest {
 
     @Autowired
@@ -55,6 +57,12 @@ class AuthSecurityWebMvcTest {
     private SocialLoginService socialLogin;
     @MockitoBean
     private TokenService tokens;
+
+    @Test
+    void deploymentHealthEndpointIsPublic() throws Exception {
+        mvc.perform(get("/health")).andExpect(status().isOk());
+        verifyNoInteractions(jwt);
+    }
 
     // 인증 헤더 없이 인가 URL·소셜 로그인·갱신 API는 호출할 수 있어야 한다.
     // 로그아웃과 일반 보호 API는 같은 조건에서 UNAUTHORIZED(401)를 반환해야 한다.
