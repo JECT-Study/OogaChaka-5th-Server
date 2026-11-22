@@ -1,6 +1,5 @@
 package com.ject.oogachaka.family.controller;
 
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,7 +49,7 @@ class FamilyControllerTest {
         SecurityContextHolder.clearContext();
     }
 
-    // 인증 사용자가 생성하면 201 CREATED와 가족 ID·초대코드·부모 구성원의 프로필을 반환한다.
+    // 인증 사용자가 가족 생성을 요청하면 해당 사용자 ID로 스텁한 가족 ID·초대코드·부모 구성원 정보를 201 CREATED로 반환한다.
     @Test
     void 생성하면_201과_가족_정보를_반환한다() throws Exception {
         FamilyMemberResponse parent = new FamilyMemberResponse(7L, "우가", "https://example.com/me.png", FamilyRole.PARENT);
@@ -65,11 +64,9 @@ class FamilyControllerTest {
             .andExpect(jsonPath("$.data.members[0].nickname").value("우가"))
             .andExpect(jsonPath("$.data.members[0].profileImageUrl").value("https://example.com/me.png"))
             .andExpect(jsonPath("$.data.members[0].familyRole").value("PARENT"));
-
-        verify(service).createFamily(7L);
     }
 
-    // 내 가족 요청은 인증 사용자 ID로 조회한 가족을 200 SUCCESS로 반환한다.
+    // 인증 사용자가 내 가족을 조회하면 해당 사용자 ID로 스텁한 가족 ID를 200 SUCCESS로 반환한다.
     @Test
     void 내_가족을_조회하면_200과_가족을_반환한다() throws Exception {
         when(service.getMyFamily(7L)).thenReturn(new FamilyResponse(5L, "ABCD2345", List.of()));
@@ -78,8 +75,6 @@ class FamilyControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("SUCCESS"))
             .andExpect(jsonPath("$.data.familyId").value(5));
-
-        verify(service).getMyFamily(7L);
     }
 
     // 서비스가 기존 가족 가입을 이유로 생성을 거절하면 409 FAMILY_ALREADY_JOINED로 응답한다.
