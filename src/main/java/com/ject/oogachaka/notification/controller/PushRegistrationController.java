@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/push/registrations")
 @RequiredArgsConstructor
-public class PushRegistrationController {
+public class PushRegistrationController implements PushRegistrationControllerDocs {
 
     private final PushRegistrationService pushRegistrationService;
 
