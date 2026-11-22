@@ -32,7 +32,8 @@ public enum ErrorCode {
     INVALID_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_SCHEDULE_TIME", "올바르지 않은 일정 시간입니다."),
 
     FAMILY_ALREADY_JOINED(HttpStatus.CONFLICT, "FAMILY_ALREADY_JOINED", "이미 가족에 속한 사용자입니다."),
-    FAMILY_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY_NOT_FOUND", "속한 가족이 없습니다.");
+    FAMILY_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY_NOT_FOUND", "속한 가족이 없습니다."),
+    FAMILY_INVITE_CODE_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY_INVITE_CODE_NOT_FOUND", "유효하지 않은 초대코드입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

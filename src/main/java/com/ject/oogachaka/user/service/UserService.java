@@ -18,7 +18,7 @@ public class UserService {
 
     private final UserRepository userRepository;
 
-    /** 소셜 계정과 같은 트랜잭션에서만 사용자를 생성한다. */
+    /** 호출자 트랜잭션(소셜 계정 또는 자녀 구성원 저장)에서만 사용자를 생성한다. */
     @Transactional(propagation = Propagation.MANDATORY)
     public User createUser(String nickname) {
         return userRepository.save(User.create(nickname));

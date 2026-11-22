@@ -1,5 +1,7 @@
 package com.ject.oogachaka.family.service;
 
+import com.ject.oogachaka.family.dto.FamilyInviteCodeResponse;
+import com.ject.oogachaka.family.dto.FamilyInviteResponse;
 import com.ject.oogachaka.family.dto.FamilyMemberResponse;
 import com.ject.oogachaka.family.dto.FamilyResponse;
 import com.ject.oogachaka.family.entity.Family;
@@ -69,5 +71,55 @@ public class FamilyService {
         return FamilyResponse.of(family, members.stream()
             .map(member -> FamilyMemberResponse.of(member, usersByMemberId.get(member.getId())))
             .toList());
+    }
+
+    public FamilyInviteResponse getInvite(String inviteCode) {
+        Family family = familyRepository.findByInviteCode(inviteCode)
+            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
+        List<FamilyMember> members = familyMemberRepository.findAllByFamilyIdOrderByIdAsc(family.getId());
+        List<Long> parentIds = members.stream()
+            .filter(member -> member.getFamilyRole() == FamilyRole.PARENT)
+            .map(FamilyMember::getId)
+            .toList();
+        boolean childJoined = members.stream().anyMatch(member -> member.getFamilyRole() == FamilyRole.CHILD);
+        return FamilyInviteResponse.of(userService.listUsersByFamilyMemberIds(parentIds), childJoined);
+    }
+
+    @Transactional
+    public ChildJoinResult joinAsChild(String inviteCode, String nickname) {
+        Family family = familyRepository.findForChildJoinByInviteCode(inviteCode)
+            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
+        List<FamilyMember> children = familyMemberRepository.findAllByFamilyIdAndFamilyRole(family.getId(), FamilyRole.CHILD);
+        if (!children.isEmpty()) {
+            Long memberId = children.get(0).getId();
+            Long userId = userService.listUserIdsByFamilyMemberIds(List.of(memberId)).stream().findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            return new ChildJoinResult(userId, false);
+        }
+
+        if (nickname == null || nickname.isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        User user = userService.createUser(nickname);
+        FamilyMember child = familyMemberRepository.save(FamilyMember.create(family.getId(), FamilyRole.CHILD));
+        userService.joinFamily(user.getId(), child.getId());
+        return new ChildJoinResult(user.getId(), true);
+    }
+
+    @Transactional
+    public FamilyInviteCodeResponse reissueInviteCode(Long userId) {
+        Long memberId = userService.getUser(userId).getFamilyMemberId();
+        if (memberId == null) {
+            throw new BusinessException(ErrorCode.FAMILY_NOT_FOUND);
+        }
+        FamilyMember member = familyMemberRepository.findById(memberId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
+        Family family = familyRepository.findById(member.getFamilyId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
+        if (member.getFamilyRole() != FamilyRole.PARENT) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        family.reissueInviteCode(inviteCodeGenerator.generate());
+        return FamilyInviteCodeResponse.from(family);
     }
 }
