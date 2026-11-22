@@ -31,4 +31,20 @@ public class UserService {
     public List<Long> listUserIdsByFamilyMemberIds(Collection<Long> familyMemberIds) {
         return userRepository.findAllByFamilyMemberIdIn(familyMemberIds).stream().map(User::getId).toList();
     }
+
+    // 동시에 들어온 가족 생성 요청이 같은 사용자를 미가입 상태로 읽지 않도록 한다.
+    @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
+    public User getUserForFamilyJoin(Long userId) {
+        return userRepository.findForFamilyJoinById(userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void joinFamily(Long userId, Long familyMemberId) {
+        getUser(userId).joinFamily(familyMemberId);
+    }
+
+    public List<User> listUsersByFamilyMemberIds(Collection<Long> familyMemberIds) {
+        return userRepository.findAllByFamilyMemberIdIn(familyMemberIds);
+    }
 }

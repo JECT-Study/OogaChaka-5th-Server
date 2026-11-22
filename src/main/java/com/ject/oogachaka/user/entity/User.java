@@ -40,4 +40,8 @@ public class User extends BaseTimeEntity {
                 .point(0)
                 .build();
     }
+
+    public void joinFamily(Long familyMemberId) {
+        this.familyMemberId = familyMemberId;
+    }
 }
