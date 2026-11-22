@@ -109,7 +109,7 @@ class FamilyControllerTest {
             .andExpect(jsonPath("$.data.childJoined").value(true));
     }
 
-    // 이름 없이 재입장하면 확인된 자녀 ID로 발급한 토큰과 신규 여부를 소셜 로그인 응답 형식으로 반환한다.
+    // 이름 없이 입장하면 서비스가 반환하도록 스텁한 자녀 ID로 토큰 발급을 요청하고 userId·isNewUser·tokens를 소셜 로그인 응답 형식으로 반환한다.
     @Test
     void 입장은_자녀의_토큰과_로그인_결과를_반환한다() throws Exception {
         when(service.joinAsChild("ABCD2345", null)).thenReturn(new ChildJoinResult(43L, false));

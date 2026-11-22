@@ -49,7 +49,7 @@ public class FamilyController implements FamilyControllerDocs {
     @PostMapping("/join")
     public ApiResponse<SocialLoginResponse> joinAsChild(@Valid @RequestBody FamilyJoinRequest request) {
         ChildJoinResult result = familyService.joinAsChild(request.inviteCode(), request.nickname());
-        // 소셜 로그인처럼 DB 트랜잭션을 끝낸 뒤 발급해 Redis 호출 중에는 DB 잠금과 커넥션을 점유하지 않는다.
+        // 가족 행 잠금을 Redis 호출 동안 유지하지 않도록 소셜 로그인처럼 트랜잭션이 끝난 뒤 발급한다.
         return ApiResponse.success(new SocialLoginResponse(result.userId(), result.isNewUser(), tokenService.issue(result.userId())));
     }
 

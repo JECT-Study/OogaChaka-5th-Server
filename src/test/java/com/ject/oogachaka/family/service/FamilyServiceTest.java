@@ -231,19 +231,16 @@ class FamilyServiceTest {
                 ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FAMILY_NOT_FOUND));
     }
 
-    // 자녀가 재발급을 요청하면 새 코드를 생성하지 않고 FORBIDDEN을 반환하며 기존 코드가 유지된다.
+    // 자녀가 재발급을 요청하면 FORBIDDEN을 반환하고 새 코드를 생성하지 않는다.
     @Test
     void 자녀는_초대코드를_재발급할_수_없다() {
-        Family family = family();
         when(userService.getUser(43L)).thenReturn(user(43L, "차카", 22L));
         when(familyMemberRepository.findById(22L)).thenReturn(Optional.of(member(22L, 5L, FamilyRole.CHILD)));
-        when(familyRepository.findById(5L)).thenReturn(Optional.of(family));
 
         assertThatThrownBy(() -> service.reissueInviteCode(43L))
             .isInstanceOfSatisfying(BusinessException.class,
                 ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
         verifyNoInteractions(inviteCodeGenerator);
-        assertThat(family.getInviteCode()).isEqualTo("ABCD2345");
     }
 
     // 부모가 재발급을 요청하면 해당 가족의 기존 코드를 생성기가 발급한 코드로 교체하고 새 코드를 반환한다.

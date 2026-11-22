@@ -114,11 +114,11 @@ public class FamilyService {
         }
         FamilyMember member = familyMemberRepository.findById(memberId)
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
-        Family family = familyRepository.findById(member.getFamilyId())
-            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
         if (member.getFamilyRole() != FamilyRole.PARENT) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
+        Family family = familyRepository.findById(member.getFamilyId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
         family.reissueInviteCode(inviteCodeGenerator.generate());
         return FamilyInviteCodeResponse.from(family);
     }

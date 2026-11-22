@@ -142,6 +142,7 @@ class AuthSecurityWebMvcTest {
         if (authorization != null) {
             headers.set(HttpHeaders.AUTHORIZATION, authorization);
         }
+        when(jwt.validate("TEST_ONLY_EXPIRED", TokenType.ACCESS)).thenThrow(new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED));
         when(familyService.joinAsChild("ABCD2345", null)).thenReturn(new ChildJoinResult(43L, false));
 
         mvc.perform(get("/api/v1/families/invites/ABCD2345").headers(headers))
