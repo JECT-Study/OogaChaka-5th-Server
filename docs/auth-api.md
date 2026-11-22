@@ -17,7 +17,7 @@
 5. 첫 로그인은 자동 가입한다. 닉네임은 제공자 값의 30자까지, 미제공 시 `우가차차_<임의 8자리>`다.
 
 state는 기본 5분이며 실패하면 authorize부터 다시 시작한다.
-공개 인증 API(authorize, social-login, refresh)는 Authorization 헤더를 무시하므로, 만료된 access가 붙어 있어도 호출할 수 있다.
+공개 API(authorize, social-login, refresh, 초대 정보 조회, 자녀 입장)는 Authorization 헤더를 무시하므로, 만료된 access가 붙어 있어도 호출할 수 있다.
 
 ```http
 POST /api/v1/auth/social-login
@@ -47,6 +47,40 @@ Content-Type: application/json
 수명 필드는 초 단위다. 응답은 제공자 토큰·원본 소셜 ID·이메일을 포함하지 않는다.
 같은 이메일이더라도 제공자가 다르면 별도 계정이다.
 
+## 자녀 입장(초대코드)
+
+1. 자녀 앱이 `GET /api/v1/families/invites/{inviteCode}`로 코드를 확인한다. `data.parentNicknames`를 가입 순서대로 보여주고, `data.childJoined`가 false면 자녀 이름을 입력받는다.
+2. `POST /api/v1/families/join`에 초대코드를 보낸다. 처음 입장할 때는 이름(최대 30자)도 보낸다. 앱 재설치·기기 변경 후 같은 코드로 다시 입장하면 서버는 이름을 무시하고 기존 자녀로 로그인한다.
+3. 소셜 로그인과 같은 형식으로 응답한다. `data.tokens`를 저장한다. `isNewUser`는 이번 입장에서 새 자녀를 생성했는지 나타낸다.
+
+```http
+POST /api/v1/families/join
+Content-Type: application/json
+
+{"inviteCode":"ABCD2345","nickname":"차카"}
+```
+
+```json
+{
+  "code": "SUCCESS",
+  "message": "요청이 성공했습니다.",
+  "data": {
+    "userId": 43,
+    "isNewUser": true,
+    "tokens": {
+      "tokenType": "Bearer",
+      "accessToken": "<app access JWT>",
+      "refreshToken": "<app refresh JWT>",
+      "accessTokenExpiresIn": 1800,
+      "refreshTokenExpiresIn": 1209600
+    }
+  }
+}
+```
+
+부모가 `POST /api/v1/families/me/invite-code`로 코드를 재발급하면 이전 코드는 즉시 사용할 수 없다.
+이미 로그인한 기기는 보관한 refresh가 만료되기 전(기본 14일)에 토큰을 갱신해 로그인을 유지할 수 있다.
+
 ## 갱신과 로그아웃
 
 `POST /api/v1/auth/refresh`에 `{"refreshToken":"<app refresh JWT>"}`를 보낸다.
@@ -64,13 +98,14 @@ Content-Type: application/json
 
 | HTTP | code | 의미 |
 | --- | --- | --- |
-| 400 | INVALID_REQUEST | 요청 본문/ENUM/길이/필수 값 오류 |
+| 400 | INVALID_REQUEST | 요청 본문/ENUM/길이/필수 값 오류, 자녀 생성 시 이름 누락 |
 | 400 | AUTH_PROVIDER_UNSUPPORTED | 미지원 또는 설정되지 않은 제공자 |
 | 400 | AUTH_SOCIAL_LOGIN_FAILED | 소셜 로그인 실패(state 없음·만료·재사용, 인가 코드 거절, 제공자 장애·잘못된 응답). 로그인 재시작 |
 | 401 | UNAUTHORIZED | 인증 헤더 없음 |
 | 401 | AUTH_TOKEN_EXPIRED | JWT 만료. refresh로 갱신한다 |
 | 401 | AUTH_TOKEN_INVALID | 그 외 JWT 오류, 이미 쓰였거나 로그아웃된 refresh. 다시 로그인한다 |
 | 403 | FORBIDDEN | 권한 거부 |
+| 404 | FAMILY_INVITE_CODE_NOT_FOUND | 유효하지 않은 가족 초대코드 |
 
 ## Redis
 
