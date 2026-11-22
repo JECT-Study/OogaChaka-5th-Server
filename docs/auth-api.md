@@ -11,7 +11,7 @@
    프런트는 콜백 state가 자신이 보관한 값과 일치하는지 검사한다. 일치하지 않거나 제공자가 error를 반환하면
    로그인을 중단한다.
 3. 프런트가 `POST /api/v1/auth/social-login`에 provider, code, state를 JSON으로 보낸다.
-   JSON의 provider는 `GOOGLE`, `KAKAO`, `NAVER`이며 경로는 대소문자를 모두 허용한다.
+   provider는 `GOOGLE`, `KAKAO`, `NAVER`이며 경로와 JSON 모두 대소문자를 구분하지 않는다.
 4. 서버가 state를 한 번만 소비하고 제공자 토큰·프로필을 서버 간 호출로 조회한다.
    구글·카카오는 S256 PKCE를 사용한다. 네이버는 공식 API에 PKCE 규격이 없어 쓰지 않는다.
 5. 첫 로그인은 자동 가입한다. 닉네임은 제공자 값의 30자까지, 미제공 시 `우가차차_<임의 8자리>`다.

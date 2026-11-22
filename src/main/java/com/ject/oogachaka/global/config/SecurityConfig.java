@@ -30,6 +30,7 @@ public class SecurityConfig {
             .exceptionHandling(errors -> errors.authenticationEntryPoint(errorHandler).accessDeniedHandler(errorHandler))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(AuthRequestMatchers.PUBLIC_ENDPOINTS).permitAll()
+                .requestMatchers("/api/swagger-ui.html", "/api/swagger-ui/**", "/api/v3/api-docs/**").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll())
             .addFilterBefore(new JwtAuthenticationFilter(tokens, errorHandler), UsernamePasswordAuthenticationFilter.class)

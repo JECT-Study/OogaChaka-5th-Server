@@ -23,7 +23,7 @@ public interface AuthControllerDocs {
 
     @Operation(summary = "소셜 로그인 완료",
         description = "제공자 콜백 URL로 받은 code와 state로 로그인하고 앱 토큰을 발급한다. 첫 로그인이면 자동 가입한다.\n\n"
-            + "provider는 GOOGLE, KAKAO, NAVER 중 하나를 대문자로 보낸다(소문자는 400).")
+            + "provider는 GOOGLE, KAKAO, NAVER 중 하나이며 대소문자를 구분하지 않는다.")
     ApiResponse<SocialLoginResponse> socialLogin(SocialLoginRequest request);
 
     @Operation(summary = "토큰 갱신",
