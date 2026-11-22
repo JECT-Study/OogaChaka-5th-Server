@@ -59,10 +59,19 @@ eventPublisher.publishEvent(new MissionCompletionRequestedEvent(mission.getId(),
 
 ## 서버 설정
 
-| 환경변수 | 설명 |
+`application.properties`에서 설정한다.
+
+| 설정 | 설명 |
 | --- | --- |
-| `FCM_ENABLED` | 기본 `false`. false면 Firebase 키 없이 앱이 뜨고 푸시는 로그만 남긴다 |
-| `FCM_SERVICE_ACCOUNT_JSON` | `true`일 때 Firebase 콘솔에서 받은 서비스 계정 JSON 내용 |
+| `app.fcm.enabled` | `true`면 FCM으로 보낸다. `false`면 Firebase 키 없이 앱이 뜨고 푸시는 로그만 남긴다 |
+| `app.fcm.service-account-json` | Firebase 콘솔에서 받은 서비스 계정 JSON을 `ENC(...)`로 암호화한 값 |
+
+서비스 계정 키를 교체할 때는 저장소 루트에서 아래처럼 암호화한다. 암호화 도구는 입력을 한 줄만 읽으므로
+`jq -c`로 JSON을 한 줄로 줄여서 넘긴다.
+
+```sh
+./gradlew -q jasyptEncrypt -Pvalue="$(jq -c . <서비스계정>.json)"
+```
 
 ## 앱(Capacitor) 준비
 

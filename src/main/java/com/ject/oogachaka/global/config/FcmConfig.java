@@ -15,7 +15,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** app.fcm.enabled=false(기본값)이면 Firebase 키 없이도 앱이 뜨도록 로그만 남기는 전송기를 쓴다. */
+/** app.fcm.enabled=false이면 Firebase 키 없이도 앱이 뜨도록 로그만 남기는 전송기를 쓴다. */
 @Configuration(proxyBeanMethods = false)
 public class FcmConfig {
 
