@@ -14,6 +14,7 @@ import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.user.entity.User;
 import com.ject.oogachaka.user.service.UserService;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -74,7 +75,7 @@ public class FamilyService {
     }
 
     public FamilyInviteResponse getInvite(String inviteCode) {
-        Family family = familyRepository.findByInviteCode(inviteCode)
+        Family family = familyRepository.findByInviteCode(normalizeInviteCode(inviteCode))
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
         List<FamilyMember> members = familyMemberRepository.findAllByFamilyIdOrderByIdAsc(family.getId());
         List<Long> parentIds = members.stream()
@@ -87,7 +88,7 @@ public class FamilyService {
 
     @Transactional
     public ChildJoinResult joinAsChild(String inviteCode, String nickname) {
-        Family family = familyRepository.findForChildJoinByInviteCode(inviteCode)
+        Family family = familyRepository.findForChildJoinByInviteCode(normalizeInviteCode(inviteCode))
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
         List<FamilyMember> children = familyMemberRepository.findAllByFamilyIdAndFamilyRole(family.getId(), FamilyRole.CHILD);
         if (!children.isEmpty()) {
@@ -121,5 +122,10 @@ public class FamilyService {
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
         family.reissueInviteCode(inviteCodeGenerator.generate());
         return FamilyInviteCodeResponse.from(family);
+    }
+
+    // 생성기는 대문자와 숫자만 사용하므로 대문자로 변환해도 서로 다른 가족의 코드가 겹치지 않는다.
+    private String normalizeInviteCode(String inviteCode) {
+        return inviteCode.strip().toUpperCase(Locale.ROOT);
     }
 }

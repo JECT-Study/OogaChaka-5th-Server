@@ -166,6 +166,21 @@ class FamilyServiceTest {
         assertThat(response.childJoined()).isEqualTo(childJoined);
     }
 
+    // 소문자와 앞뒤 공백이 섞인 코드로 조회하면 대문자 코드의 가족을 찾고, 입장하면 그 가족의 기존 자녀 ID를 반환한다.
+    @Test
+    void 초대_조회와_입장은_코드의_대소문자와_앞뒤_공백을_무시한다() {
+        Family family = family();
+        FamilyMember child = member(22L, 5L, FamilyRole.CHILD);
+        when(familyRepository.findByInviteCode("ABCD2345")).thenReturn(Optional.of(family));
+        when(familyRepository.findForChildJoinByInviteCode("ABCD2345")).thenReturn(Optional.of(family));
+        when(familyMemberRepository.findAllByFamilyIdOrderByIdAsc(5L)).thenReturn(List.of(child));
+        when(familyMemberRepository.findAllByFamilyIdAndFamilyRole(5L, FamilyRole.CHILD)).thenReturn(List.of(child));
+        when(userService.listUserIdsByFamilyMemberIds(List.of(22L))).thenReturn(List.of(43L));
+
+        assertThat(service.getInvite(" abcd2345 ").childJoined()).isTrue();
+        assertThat(service.joinAsChild(" abcd2345 ", null)).isEqualTo(new ChildJoinResult(43L, false));
+    }
+
     // 첫 입장이면 받은 이름으로 사용자를 만들고 초대된 가족의 CHILD 구성원과 연결한 뒤 신규 사용자로 반환한다.
     @Test
     void 첫_입장은_사용자와_자녀_구성원을_연결한다() {
