@@ -49,6 +49,8 @@ Content-Type: application/json
 
 ## 자녀 입장(초대코드)
 
+초대 조회와 자녀 입장 모두 초대코드의 대소문자를 구분하지 않고 앞뒤 공백을 무시한다.
+
 1. 자녀 앱이 `GET /api/v1/families/invites/{inviteCode}`로 코드를 확인한다. `data.parentNicknames`를 가입 순서대로 보여주고, `data.childJoined`가 false면 자녀 이름을 입력받는다.
 2. `POST /api/v1/families/join`에 초대코드를 보낸다. 처음 입장할 때는 이름(최대 30자)도 보낸다. 앱 재설치·기기 변경 후 같은 코드로 다시 입장하면 서버는 이름을 무시하고 기존 자녀로 로그인한다.
 3. 소셜 로그인과 같은 형식으로 응답한다. `data.tokens`를 저장한다. `isNewUser`는 이번 입장에서 새 자녀를 생성했는지 나타낸다.
@@ -105,6 +107,7 @@ Content-Type: application/json
 | 401 | AUTH_TOKEN_EXPIRED | JWT 만료. refresh로 갱신한다 |
 | 401 | AUTH_TOKEN_INVALID | 그 외 JWT 오류, 이미 쓰였거나 로그아웃된 refresh. 다시 로그인한다 |
 | 403 | FORBIDDEN | 권한 거부 |
+| 404 | FAMILY_NOT_FOUND | 초대코드 재발급을 요청한 사용자가 속한 가족 없음 |
 | 404 | FAMILY_INVITE_CODE_NOT_FOUND | 유효하지 않은 가족 초대코드 |
 
 ## Redis
