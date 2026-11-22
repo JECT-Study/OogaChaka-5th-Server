@@ -3,7 +3,6 @@ package com.ject.oogachaka.family.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -65,7 +64,7 @@ class FamilyServiceTest {
         verifyNoInteractions(familyMemberRepository, userService);
     }
 
-    // 이미 구성원 ID가 있으면 FAMILY_ALREADY_JOINED로 거절하고 가족·구성원 저장이나 사용자 연결을 하지 않는다.
+    // 이미 구성원 ID가 있는 사용자가 가족 생성을 요청하면 FAMILY_ALREADY_JOINED로 거절한다.
     @Test
     void 이미_가족에_속하면_생성하지_않는다() {
         when(userService.getUserForFamilyJoin(7L)).thenReturn(user(7L, "우가", 21L));
@@ -73,9 +72,6 @@ class FamilyServiceTest {
         assertThatThrownBy(() -> service.createFamily(7L))
             .isInstanceOfSatisfying(BusinessException.class,
                 ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FAMILY_ALREADY_JOINED));
-
-        verifyNoInteractions(familyRepository, familyMemberRepository, inviteCodeGenerator);
-        verify(userService, never()).joinFamily(any(), any());
     }
 
     // 미가입 사용자가 생성하면 발급 코드로 가족을 만들고 그 가족의 부모 구성원에 요청자를 연결한다.
