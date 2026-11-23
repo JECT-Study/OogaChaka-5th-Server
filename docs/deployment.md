@@ -43,7 +43,8 @@ AWS 인증은 OIDC를 사용한다.
 `/ooga/app/runtime-gwangmin-20261108-01`
 
 이 경로는 현재 초기 구성에서 사용하는 이름이다.
-변경 시 deploy.sh의 PARAMETER도 함께 변경한다.
+dev는 이 경로를 그대로 사용한다. 다른 경로는 deploy.sh 실행 시 APP_RUNTIME_PARAMETER로 지정할 수 있다.
+prod는 이 dev 경로를 재사용할 수 없으며 별도 APP_RUNTIME_PARAMETER가 필요하다.
 
 EC2가 배포할 때 값을 조회하여 다음 파일에 저장한다.
 
@@ -72,12 +73,59 @@ DB와 Redis 주소는 EC2에서 접근 가능한 주소를 사용한다.
 | 경로 | 용도 |
 | --- | --- |
 | /opt/ooga/app/docker-compose.yml | 앱 실행 구성 |
-| /opt/ooga/app/.env | APP_IMAGE 주소 |
+| /opt/ooga/app/.env | APP_IMAGE 주소와 APP_PROFILE |
 | /opt/ooga/app/.env.runtime | 앱 실행 설정·비밀값 |
 
 이미지는 Git 커밋 SHA로 태그하고, EC2에는 이미지 digest를 지정하여 배포한다.
-배포 파일 묶음에는 docker-compose.yml과 deploy.sh만 포함한다.
+배포 파일 묶음에는 docker-compose.yml, deploy.sh, post-deploy.sh, cleanup-app-images.sh를 포함한다.
 실행 비밀값은 S3 배포 묶음에 포함하지 않는다.
+
+## 실행 프로필
+
+같은 Docker 이미지를 사용하고 실행할 때 프로필을 선택한다.
+
+| 프로필 | 사용 환경 | 설정 |
+| --- | --- | --- |
+| local | IntelliJ·내 맥 | application-local-defaults.properties + 개인 application-local.properties |
+| dev | 현재 테스트 EC2 | application-dev.properties + SSM 환경변수 |
+| prod | 추후 운영 EC2 | application-prod.properties + 별도 운영 SSM 환경변수 |
+
+현재 GitHub Actions는 dev에만 배포하고 APP_PROFILE=dev를 지정한다.
+배포 스크립트는 APP_PROFILE을 .env에 저장하고 Compose가 SPRING_PROFILES_ACTIVE로 전달한다.
+.env.runtime에 프로필 이름이 있어도 Compose의 선택이 우선한다.
+배포 스크립트는 local이나 알 수 없는 프로필로 서버를 배포하지 않는다.
+prod 설정은 준비 단계이며 main 자동 배포·운영 서버 생성·운영 IAM 변경은 포함하지 않는다.
+
+prod에는 운영 DB·Flyway 계정, Redis, CORS, Jasypt/AES/HMAC/JWT 키를 따로 준비한다.
+사용하는 OAuth 제공자의 client-id·secret·redirect-uri도 운영 값으로 전달한다.
+설정값을 수정한 뒤 재배포해야 실행 중인 앱에 반영된다.
+GitHub Secrets에서 SSM으로 값을 복사하는 단계는 없으며 비밀값의 기준은 Parameter Store다.
+
+## 오래된 앱 이미지 정리
+
+앱 배포가 성공한 뒤 워크플로가 별도 프로세스로 post-deploy.sh를 실행한다.
+앱 배포에는 기존 8분 제한과 롤백 유예를 적용하고, 정리에는 별도의 30초 제한과 종료 유예 5초를 적용한다.
+정리 실패·시간 초과는 경고로만 표시하며 완료된 배포 결과를 실패로 바꾸지 않는다.
+앱 배포 자체가 실패하면 정리를 실행하지 않는다.
+수동으로 deploy.sh만 실행한 경우 자동 정리는 실행하지 않는다.
+
+배포는 잠금을 보유한 상태에서 실제 교체 전 컨테이너 이미지 ID를 임시 컨텍스트 파일에 기록한다.
+정리도 같은 배포 잠금을 얻어야 하며, 이미 다른 배포가 진행 중이면 건너뛴다.
+정리 대상 이미지와 현재 실행 중인 컨테이너 이미지가 다르면 오래된 배포의 정리를 건너뛴다.
+
+현재 배포 이미지와 실제 직전 정상 이미지 ID를 보존한다.
+두 ID는 `/opt/ooga/app/.successful-images.json` 한 파일에 기록하며,
+같은 디렉터리의 임시 파일을 완성한 뒤 rename으로 한 번에 교체한다. 저장 실패 시 삭제하지 않는다.
+앞선 저장 실패로 이력이 오래됐더라도 다음 배포의 실제 교체 전 ID를 보호한다.
+같은 이미지 재배포는 이력이 현재 이미지와 일치할 때 직전의 다른 정상 버전을 유지한다.
+이력이 불명확하거나 이전 컨텍스트가 없으면 이미지 삭제를 건너뛴다.
+기존 .last-successful-image-id와 .previous-successful-image-id 두 파일은 더 이상 정리 판단에 사용하지 않는다.
+
+현재·직전 정상 이미지를 제외한 동일 앱 저장소 이미지 중 생성 후 72시간이 지난 것만 삭제를 시도한다.
+기존 컨테이너가 없는 최초 배포는 현재 이미지 기록만 남기고 삭제하지 않는다.
+강제 삭제·전체 image prune·system prune·볼륨 삭제는 사용하지 않는다.
+다른 컨테이너가 사용 중이거나 여러 저장소 참조로 삭제가 거부된 이미지는 보존한다.
+ECR 보관 정책은 변경하지 않는다.
 
 ## 기동 확인
 
@@ -90,7 +138,7 @@ DB와 Redis 주소는 EC2에서 접근 가능한 주소를 사용한다.
 
 새 설정 검사와 이미지 다운로드를 마친 뒤 기존 컨테이너를 갱신한다.
 배포 스크립트가 8분을 넘기면 종료 신호를 보내고, 롤백에 최대 6분을 더 준다.
-SSM 실행 제한은 17분이며, GitHub Actions는 명령 전달 시간을 포함해 최대 19분 동안 상태 조회를 시도한다.
+SSM 실행 제한은 정리 시간을 포함해 18분이며, GitHub Actions는 명령 전달 시간을 포함해 최대 20분 동안 상태 조회를 시도한다.
 배포 작업은 최대 60분이며, SSM 단계 21분과 작업 여유 1분을 확보할 수 있을 때만 배포 명령을 보낸다.
 이미 App EC2에서 배포가 진행 중이면 새 실행은 배포 잠금을 얻지 못하고 종료한다.
 다른 Compose 프로젝트의 `oogachaka-app`이 있거나 기존 실행 설정이 불완전하면 컨테이너 이름을 잠시 바꿔 보관한다.

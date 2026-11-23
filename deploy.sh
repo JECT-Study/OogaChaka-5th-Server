@@ -3,8 +3,19 @@ set -Eeuo pipefail
 umask 077
 
 IMAGE="${1:?배포할 이미지 주소가 필요합니다}"
+# 배포 대상 프로필은 이미지 빌드와 분리해 실행할 때 지정한다.
+APP_PROFILE="${APP_PROFILE:-dev}"
+case "$APP_PROFILE" in
+    dev|prod) ;;
+    *) echo "[deploy] APP_PROFILE은 dev 또는 prod여야 합니다." >&2; exit 1 ;;
+esac
 REGION="ap-northeast-2"
-PARAMETER="/ooga/app/runtime-gwangmin-20261108-01"
+DEV_PARAMETER="/ooga/app/runtime-gwangmin-20261108-01"
+PARAMETER="${APP_RUNTIME_PARAMETER:-$DEV_PARAMETER}"
+if [ "$APP_PROFILE" = prod ] && { [ -z "${APP_RUNTIME_PARAMETER:-}" ] || [ "$PARAMETER" = "$DEV_PARAMETER" ]; }; then
+    echo "[deploy] prod는 별도의 APP_RUNTIME_PARAMETER를 지정해야 합니다." >&2
+    exit 1
+fi
 DEST="/opt/ooga/app"
 SOURCE="$(cd "$(dirname "$0")" && pwd)"
 APP_CONTAINER="oogachaka-app"
@@ -190,7 +201,7 @@ trap 'rollback 143' TERM
 
 echo "[deploy] 실행 설정 준비"
 cp "$SOURCE/docker-compose.yml" "$STAGE/docker-compose.yml"
-printf 'APP_IMAGE=%s\n' "$IMAGE" > "$STAGE/.env"
+printf 'APP_IMAGE=%s\nAPP_PROFILE=%s\n' "$IMAGE" "$APP_PROFILE" > "$STAGE/.env"
 
 aws ssm get-parameter \
     --name "$PARAMETER" \
@@ -212,8 +223,10 @@ for file in docker-compose.yml .env .env.runtime; do
     fi
 done
 
+previous_image_id=""
 current_container="$(find_app_container)"
 if [ -n "$current_container" ]; then
+    previous_image_id="$(docker inspect --format '{{.Image}}' "$current_container")"
     current_owner="$(container_owner "$current_container")"
     if [ "$current_owner" != "$APP_PROJECT/app" ] ||
        [ ! -s "$BACKUP/docker-compose.yml" ] ||
@@ -256,5 +269,11 @@ PRESERVE_BACKUP=0
 if [ -n "$LEGACY_CONTAINER" ]; then
     docker rm "$LEGACY_CONTAINER" ||
         echo "[deploy] 보관한 기존 컨테이너를 정리하지 못했습니다: $legacy_name" >&2
+fi
+# 삭제는 워크플로의 별도 시간 제한에서 실행한다. 실제 교체 전 이미지 ID만 전달한다.
+if [ -n "${POST_DEPLOY_CONTEXT:-}" ]; then
+    if ! printf '%s\n' "$previous_image_id" > "$POST_DEPLOY_CONTEXT"; then
+        echo "[deploy] 정리용 이전 이미지 기록 실패. 배포는 성공했습니다." >&2
+    fi
 fi
 echo "[deploy] 기동 확인 완료: $IMAGE"

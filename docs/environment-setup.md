@@ -15,22 +15,35 @@ Java 17을 사용한다. 처음 세팅한다면 아래 [한눈에 보기](#한�
 | 내 PC에서 사용할 DB 접속 정보(앱·Flyway) | `application-local.properties`에 평문 | - | 안 올라감 (`.gitignore`) |
 | 키 4개 (AES, HMAC 2개, JWT) | `application-local.properties`에 평문 | 환경변수 | 안 올라감 |
 | Jasypt 비밀번호 | `application-local.properties`에 평문 | 환경변수 `JASYPT_ENCRYPTOR_PASSWORD` | 안 올라감 |
-| 공용 DB 접속 정보(앱·Flyway), 공용 OAuth secret | `application.properties`에 `ENC(...)` | 동일 | **올라감 (암호문)** |
+| 테스트 DB 접속 정보(앱·Flyway), 공용 OAuth secret | DB 암호문은 `application-dev.properties`, OAuth 암호문은 `application.properties` | dev 설정 + SSM 환경변수, prod는 별도 운영 설정 | **암호문만 올라감** |
 
 - **Jasypt**는 Git에 올라가는 `application.properties`의 비밀값을 `ENC(...)` 암호문으로 바꿔 두는
   도구다. 앱이 켜질 때 Jasypt 비밀번호로 `ENC(...)`를 풀어 원래 값으로 쓴다. 비밀번호가 없는 사람은
   저장소를 받아도 `ENC(...)` 안의 값을 알 수 없다.
 - Jasypt 비밀번호는 어디서 발급받는 값이 아니라 **우리가 정하는 값**이다. `ENC(...)`를 만들 때와
   풀 때 같은 비밀번호를 써야 하므로 팀이 하나를 정해 비공개로 공유한다.
-- 공통 파일의 앱·Flyway DB 계정은 모두 `ENC(...)`로 저장한다. Flyway 전용 환경변수를 따로
+- dev 파일의 앱·Flyway DB 계정은 모두 `ENC(...)`로 저장한다. Flyway 전용 환경변수를 따로
   요구하지 않으며, Flyway URL은 `spring.datasource.url`을 참조한다.
-- `application.properties`의 DB URL, 앱 계정·비밀번호, Flyway 계정·비밀번호에는 공용 값의
+- `application-dev.properties`의 DB URL, 앱 계정·비밀번호, Flyway 계정·비밀번호에는 테스트 값의
   실제 `ENC(...)` 암호문이 반영되어 있다. 팀원은 이를 복호화할 Jasypt 비밀번호를 비공개로 전달받는다.
   접속정보를 교체할 때는 [공용 값 암호화](#공용-값-암호화-applicationproperties)를 따른다.
 - `local` 프로필은 내 PC에서 실행할 때 사용할 설정이라는 뜻이다. DB 서버가 반드시 내 PC에
   있어야 한다는 뜻은 아니며, 공용 DB 연결정보도 로컬 파일에 지정할 수 있다.
-- 로컬 파일에는 공통 파일과 다른 값만 적는다. 없는 항목은 공통 값을 사용하므로 두 파일의
+- 로컬 파일에는 기본값과 다른 값만 적는다. DB 기본값은 내 맥용이며 팀 DB로 대체되지 않으므로 두 파일의
   전체 항목 수를 맞출 필요는 없다. 같은 항목을 덮어쓸 때는 설정 이름을 동일하게 쓴다.
+
+## 프로필별 설정 파일
+
+| 파일 | 내용 |
+| --- | --- |
+| application.properties | 공통 설정, 기본 프로필 local |
+| application-local-defaults.properties | local에서만 활성화되는 내 맥 DB·Redis 기본값 |
+| application-local.properties | 개인 비밀값·주소 덮어쓰기. Git/JAR 제외 |
+| application-dev.properties | 테스트 DB 암호문. SSM 환경변수로 덮어쓰기 가능 |
+| application-prod.properties | 운영 환경변수 참조. 테스트 DB 기본값 없음 |
+
+개인 파일에 이미 팀 DB·터널 주소를 지정했다면 그 값이 유지된다.
+로컬 DB를 사용하려면 해당 개인 파일의 DB·Redis 주소도 직접 확인한다.
 
 ## 환경변수 (서버·CI)
 
@@ -99,7 +112,7 @@ jasypt.encryptor.password=REPLACE_WITH_JASYPT_PASSWORD
   확인하려면 `git check-ignore -v src/main/resources/application-local.properties`를 실행한다.
   한 줄이 출력되면 무시 대상이다(출력이 없으면 커밋하지 말고 팀에 알린다).
 - local 프로필로 실행하면 Spring이 `application.properties`를 먼저 읽고 이 파일을 그 위에 덮어쓴다.
-  같은 키는 이 파일 값이 이기고, 이 파일에 없는 키는 `application.properties` 값을 그대로 쓴다.
+  개인 파일은 local 전용 기본값보다 우선한다. DB 기본값은 `application-local-defaults.properties`이며 공통 설정은 `application.properties`에서 읽는다.
 - 위 예시 외의 설정은 로컬에서 다른 값을 써야 할 때만 추가한다.
 
 ### 2단계. DB 접속 대상과 계정 맞추기
@@ -121,8 +134,9 @@ Flyway 계정은 스키마 변경과 Flyway 이력 관리에 사용한다. URL�
 운영 주소를 구분한다.
 
 `local`로 실행해도 Flyway는 켜져 있다. 공용 DB를 연결 대상으로 정하면 그 DB에 미적용 SQL이
-실행되므로 팀과 변경 내용·적용 시점을 맞춘다. 기존 테이블이 있고 Flyway 이력이 없다면 현재
-`baseline-on-migrate=true` 설정은 기본 기준 버전 1을 등록하고 V2부터 적용한다. 데이터가 0건이어도
+실행되므로 팀과 변경 내용·적용 시점을 맞춘다. 기존 테이블이 있고 Flyway 이력이 없다면 dev의
+`baseline-on-migrate=true` 설정은 기본 기준 버전 1을 등록하고 V2부터 적용한다.
+local/prod 기본값은 false여서 기존 스키마를 자동으로 baseline 처리하지 않는다. 데이터가 0건이어도
 테이블이 있으면 이 경우에 해당한다. 기존 스키마가 V1과 같은지는 baseline이 검사하지 않는다.
 
 ### 3단계. 공유받은 키와 Jasypt 비밀번호 넣기
@@ -199,8 +213,8 @@ Gradle이 Java 17을 찾지 못하면 `JAVA_HOME`을 Java 17 경로로 지정한
 JASYPT_ENCRYPTOR_PASSWORD=...;AES_ENCRYPTION_KEY=...;HMAC_SOCIAL_ID_KEY=...;HMAC_DEVICE_TOKEN_KEY=...;JWT_SECRET=...
 ```
 
-- 이 방법은 local 프로필이 필요 없다. `application.properties`는 수정하지 않는다.
-- DB는 `application.properties`의 공용 DB(`ENC(...)`)로 연결된다. 머지 전 Flyway 파일이 있는 브랜치를
+- 프로필을 생략하면 기본 local이 선택된다. `application.properties`는 수정하지 않는다.
+- local의 DB 기본값은 `127.0.0.1:3306/oogachaka`다. 팀 DB 연결이 필요하면 개인 파일에 명시한다. 머지 전 Flyway 파일이 있는 브랜치를
   실행하면 그 SQL이 공용 DB에 바로 적용되므로 주의한다.
 - 터미널의 `bootRun`과 `jasyptEncrypt`에는 IntelliJ 설정이 적용되지 않는다. 필요하면 같은 값을 셸 환경변수로 넘긴다.
 
@@ -270,7 +284,7 @@ WHERE TABLE_SCHEMA = DATABASE()
 
 **공용 DB 정보나 공용 OAuth secret을 Git에 올릴 때만** 한다. 로컬 개발만 할 때는 필요 없다.
 
-현재 공통 DB 암호문을 그대로 사용하는 팀원은 다시 암호화할 필요가 없다. 아래 절차는 공용
+현재 dev DB 암호문을 그대로 사용하는 팀원은 다시 암호화할 필요가 없다. 아래 절차는 공용
 접속정보를 새로 등록하거나 교체할 때 사용한다. 여기서 원문은 DB 주소·계정·DB 비밀번호이고,
 이를 잠그고 푸는 열쇠는 별도의 Jasypt 비밀번호다.
 
@@ -291,7 +305,7 @@ WHERE TABLE_SCHEMA = DATABASE()
 
    실행한 명령은 셸 이력에 남는다. 실제 비밀값을 넣었다면 실행 후 `~/.zsh_history`에서 그 줄을 지운다.
 
-3. `ENC(...)` 형태의 한 줄이 출력된다. 괄호까지 전부 복사해 `application.properties`의 해당 값을 바꾼다.
+3. `ENC(...)` 형태의 한 줄이 출력된다. 괄호까지 전부 복사해 DB는 `application-dev.properties`, 공용 OAuth는 `application.properties`의 해당 값을 바꾼다.
 
    ```properties
    spring.datasource.url=ENC(출력된_암호문)
@@ -388,29 +402,28 @@ AES 교체 시 기존 `app.crypto.aes-keys.v1`을 유지하고 환경별 로컬 
 계정 재연동/데이터 전환을 먼저 계획한다. 디바이스 HMAC 키 변경 시 기존 토큰을 복호화하여
 token_hash를 백필하고 전환 중 UNIQUE 검사가 일관되도록 별도 배포 절차를 준비한다.
 
-## 운영·CI 환경변수 주입
+## 서버 실행 설정과 프로필
 
-GitHub Actions로 배포한다면 저장소의 `Settings > Secrets and variables > Actions`에
-Jasypt 비밀번호와 AES/HMAC/JWT 키의 실제 값을 환경별 Secrets로 등록할 수 있다.
-공통 파일의 DB·Flyway 계정은 이미 `ENC(...)`로 저장하므로 별도의 DB 계정 환경변수는 요구하지 않는다.
+서버 비밀값은 SSM Parameter Store의 SecureString에서 관리한다.
+배포할 때 EC2가 조회해 권한 600의 `.env.runtime`에 저장하고 Compose가 앱 환경변수로 전달한다.
+GitHub Actions에는 OIDC 역할 ARN처럼 비밀이 아닌 배포 변수만 둔다.
+실제 값이나 `.env.runtime` 파일을 Git·PR·로그에 올리지 않는다.
+경로와 변경 후 재배포 절차는 [배포 가이드](deployment.md)를 따른다.
 
-다음은 워크플로 단계에서 Secrets를 환경변수로 꺼내는 부분만 보여주는 예시다.
+- local: 프로필을 지정하지 않아도 기본 선택된다. 내 맥 DB·Redis 기본값을 사용한다.
+  개인 `src/main/resources/application-local.properties`를 프로젝트 루트 기준 외부 파일로 읽으며,
+  Git과 JAR에는 포함하지 않는다. 다른 작업 폴더에서 실행하면 파일 위치를 별도로 지정해야 한다.
+  개인 파일 경로는 `app.local-config` 프로퍼티 또는 `APP_LOCAL_CONFIG` 환경변수에
+  `file:/절대/경로/application-local.properties`처럼 지정할 수 있다.
+  프로필 테스트는 실제 개인 파일 대신 빈 임시 파일과 테스트 fixture를 사용한다.
+- dev: `SPRING_PROFILES_ACTIVE=dev`로 선택한다. 기존 팀 DB 암호문을 유지하고 SSM 값이 우선한다.
+- prod: `SPRING_PROFILES_ACTIVE=prod`로 선택한다. 운영용 DB·Flyway·Redis·CORS 값을 요구하고
+  테스트 DB 암호문과 테스트 OAuth 계정으로 대신 연결하지 않는다.
+  OAuth는 제공자별 운영 client-id·secret·redirect-uri를 전달한 경우에만 사용한다.
 
-```yaml
-env:
-  JASYPT_ENCRYPTOR_PASSWORD: ${{ secrets.JASYPT_ENCRYPTOR_PASSWORD }}
-  AES_ENCRYPTION_KEY: ${{ secrets.AES_ENCRYPTION_KEY }}
-  HMAC_SOCIAL_ID_KEY: ${{ secrets.HMAC_SOCIAL_ID_KEY }}
-  HMAC_DEVICE_TOKEN_KEY: ${{ secrets.HMAC_DEVICE_TOKEN_KEY }}
-  JWT_SECRET: ${{ secrets.JWT_SECRET }}
-```
-
-Secrets 등록과 위 `env` 설정만으로 운영 서버의 환경변수가 자동 설정되지는 않는다.
-배포 워크플로에서 이 값을 실제 앱을 실행하는 JVM·컨테이너의 환경변수로 전달하는 단계를 구성한다.
-운영 앱은 전달받은 `JASYPT_ENCRYPTOR_PASSWORD`로 공통 암호문을 복호화한다.
-컴파일 자체는 비밀값을 요구하지 않는다.
-서비스 계정 파일은 저장소에 올리지 않고 비밀 파일 마운트/ADC 또는 Secret의 내용 주입을 사용한다.
-등록·참조 방법은 [GitHub Actions Secrets 공식 문서](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)를 참고한다.
+Jasypt 비밀번호는 로컬 개인 파일 또는 서버 환경변수로 전달한다.
+Jasypt와 데이터 암호화 키를 새로 생성하거나 교체하는 작업은 이 프로필 분리에 포함하지 않는다.
+운영 서버와 main 자동 배포는 별도 준비가 필요하다. 빌드·단위 테스트 자체에는 서버 비밀값을 넣지 않는다.
 
 ## 검증 범위와 테스트 실행
 
