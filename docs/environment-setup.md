@@ -413,6 +413,9 @@ GitHub Actions에는 OIDC 역할 ARN처럼 비밀이 아닌 배포 변수만 둔
 - local: 프로필을 지정하지 않아도 기본 선택된다. 내 맥 DB·Redis 기본값을 사용한다.
   개인 `src/main/resources/application-local.properties`를 프로젝트 루트 기준 외부 파일로 읽으며,
   Git과 JAR에는 포함하지 않는다. 다른 작업 폴더에서 실행하면 파일 위치를 별도로 지정해야 한다.
+  개인 파일 경로는 `app.local-config` 프로퍼티 또는 `APP_LOCAL_CONFIG` 환경변수에
+  `file:/절대/경로/application-local.properties`처럼 지정할 수 있다.
+  프로필 테스트는 실제 개인 파일 대신 빈 임시 파일과 테스트 fixture를 사용한다.
 - dev: `SPRING_PROFILES_ACTIVE=dev`로 선택한다. 기존 팀 DB 암호문을 유지하고 SSM 값이 우선한다.
 - prod: `SPRING_PROFILES_ACTIVE=prod`로 선택한다. 운영용 DB·Flyway·Redis·CORS 값을 요구하고
   테스트 DB 암호문과 테스트 OAuth 계정으로 대신 연결하지 않는다.

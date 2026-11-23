@@ -223,8 +223,10 @@ for file in docker-compose.yml .env .env.runtime; do
     fi
 done
 
+previous_image_id=""
 current_container="$(find_app_container)"
 if [ -n "$current_container" ]; then
+    previous_image_id="$(docker inspect --format '{{.Image}}' "$current_container")"
     current_owner="$(container_owner "$current_container")"
     if [ "$current_owner" != "$APP_PROJECT/app" ] ||
        [ ! -s "$BACKUP/docker-compose.yml" ] ||
@@ -268,30 +270,10 @@ if [ -n "$LEGACY_CONTAINER" ]; then
     docker rm "$LEGACY_CONTAINER" ||
         echo "[deploy] 보관한 기존 컨테이너를 정리하지 못했습니다: $legacy_name" >&2
 fi
-echo "[deploy] 기동 확인 완료: $IMAGE"
-
-# 성공한 이미지 ID를 기록해 실패한 배포가 다음 정리의 보호 대상을 바꾸지 않게 한다.
-finish_image_cleanup() {
-    local last_id="" previous_id="" current_id
-    if [ -f "$DEST/.last-successful-image-id" ]; then
-        last_id="$(cat "$DEST/.last-successful-image-id")" || return 1
+# 삭제는 워크플로의 별도 시간 제한에서 실행한다. 실제 교체 전 이미지 ID만 전달한다.
+if [ -n "${POST_DEPLOY_CONTEXT:-}" ]; then
+    if ! printf '%s\n' "$previous_image_id" > "$POST_DEPLOY_CONTEXT"; then
+        echo "[deploy] 정리용 이전 이미지 기록 실패. 배포는 성공했습니다." >&2
     fi
-    if [ -f "$DEST/.previous-successful-image-id" ]; then
-        previous_id="$(cat "$DEST/.previous-successful-image-id")" || return 1
-    fi
-    current_id="$(docker image inspect --format '{{.Id}}' "$IMAGE")" || return 1
-    # 같은 이미지를 재배포해도 직전의 다른 정상 버전은 계속 보호한다.
-    if [ "$current_id" != "$last_id" ]; then
-        previous_id="$last_id"
-    fi
-    printf '%s\n' "$previous_id" > "$STAGE/previous-successful-image-id" || return 1
-    printf '%s\n' "$current_id" > "$STAGE/last-successful-image-id" || return 1
-    install -m 600 "$STAGE/previous-successful-image-id" "$DEST/.previous-successful-image-id" || return 1
-    install -m 600 "$STAGE/last-successful-image-id" "$DEST/.last-successful-image-id" || return 1
-    bash "$SOURCE/cleanup-app-images.sh" "$IMAGE" "$previous_id"
-}
-
-# 정리 오류는 완료된 배포를 실패로 바꾸지 않는다.
-if ! finish_image_cleanup; then
-    echo "[deploy] 이전 앱 이미지 정리를 완료하지 못했습니다. 배포는 성공했습니다." >&2
 fi
+echo "[deploy] 기동 확인 완료: $IMAGE"

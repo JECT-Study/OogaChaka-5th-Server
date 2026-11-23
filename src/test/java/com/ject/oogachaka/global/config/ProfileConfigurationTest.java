@@ -3,7 +3,12 @@ package com.ject.oogachaka.global.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
@@ -12,8 +17,19 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 /** DB에 연결하지 않고 실제 설정 파일의 프로필별 선택과 운영 필수 값 누락을 검사한다. */
 class ProfileConfigurationTest {
 
-    private final ApplicationContextRunner runner = new ApplicationContextRunner()
-        .withInitializer(new ConfigDataApplicationContextInitializer());
+    @TempDir
+    Path temporaryDirectory;
+
+    private Path personalConfig;
+    private ApplicationContextRunner runner;
+
+    @BeforeEach
+    void useTemporaryPersonalConfig() throws IOException {
+        personalConfig = Files.createFile(temporaryDirectory.resolve("personal.properties"));
+        runner = new ApplicationContextRunner()
+            .withPropertyValues("app.local-config=" + personalConfig.toUri())
+            .withInitializer(new ConfigDataApplicationContextInitializer());
+    }
 
     // 프로필을 생략한 실행은 팀 DB 암호문 대신 내 맥 DB 주소를 선택한다.
     @Test
@@ -24,6 +40,16 @@ class ProfileConfigurationTest {
             assertThat(context.getEnvironment().getProperty("spring.datasource.url"))
                 .isEqualTo("jdbc:mysql://127.0.0.1:3306/oogachaka");
         });
+    }
+
+    // 임시 개인 파일은 local 기본 주소를 덮어쓰지만 dev의 팀 DB 설정에는 영향을 주지 않는다.
+    @Test
+    void personalOverridesApplyOnlyToLocal() throws IOException {
+        Files.writeString(personalConfig, "spring.datasource.url=jdbc:mysql://personal.invalid:13306/test\n");
+        runner.run(context -> assertThat(context.getEnvironment().getProperty("spring.datasource.url"))
+            .isEqualTo("jdbc:mysql://personal.invalid:13306/test"));
+        runner.withPropertyValues("spring.profiles.active=dev").run(context ->
+            assertThat(context.getEnvironment().getProperty("spring.datasource.url")).startsWith("ENC("));
     }
 
     // dev는 기존 DB 암호문을 유지하며 local의 마이그레이션 설정을 가져오지 않는다.

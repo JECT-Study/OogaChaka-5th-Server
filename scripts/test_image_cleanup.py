@@ -49,36 +49,6 @@ print(1000000 if sys.argv[1] == '+%s' else 999999 if sys.argv[2] == 'recent' els
             self.assertFalse((root / 'removed').exists())
 
 
-    # 첫 적용은 이전 성공 ID 없이 호출하고, 정리 실패 뒤에도 새 성공 ID와 배포 성공을 유지한다.
-    def test_deployment_records_success_and_tolerates_cleanup_failure(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            stage = root / 'stage'
-            stage.mkdir()
-            docker = root / 'docker'
-            docker.write_text("#!/bin/sh\nprintf 'sha256:new\\n'\n")
-            helper = root / 'cleanup-app-images.sh'
-            helper.write_text("#!/bin/sh\nprintf '%s' \"$2\" > \"$SOURCE/previous-argument\"\nexit 1\n")
-            docker.chmod(0o700)
-            deploy = (ROOT / 'deploy.sh').read_text()
-            finalization = deploy[deploy.index('finish_image_cleanup() {'):]
-            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                       SOURCE=str(root), DEST=str(root), STAGE=str(stage), IMAGE='test.invalid/app:new')
-            result = subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + finalization],
-                                    env=env, text=True, capture_output=True, check=True)
-            self.assertIn('배포는 성공했습니다', result.stderr)
-            self.assertEqual((root / 'previous-argument').read_text(), '')
-            self.assertEqual((root / '.last-successful-image-id').read_text().strip(), 'sha256:new')
-            (root / '.last-successful-image-id').write_text('sha256:previous\n')
-            subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + finalization],
-                           env=env, text=True, capture_output=True, check=True)
-            self.assertEqual((root / 'previous-argument').read_text(), 'sha256:previous')
-            self.assertEqual((root / '.last-successful-image-id').read_text().strip(), 'sha256:new')
-            # 같은 버전 재배포 때도 직전의 다른 정상 버전을 보호해야 한다.
-            subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + finalization],
-                           env=env, text=True, capture_output=True, check=True)
-            self.assertEqual((root / 'previous-argument').read_text(), 'sha256:previous')
-
 
 
 if __name__ == '__main__': unittest.main()

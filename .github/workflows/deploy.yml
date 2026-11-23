@@ -31,7 +31,9 @@ jobs:
         run: |
           bash -n deploy.sh
           bash -n cleanup-app-images.sh
+          bash -n post-deploy.sh
           python3 scripts/test_image_cleanup.py
+          python3 scripts/test_post_deploy.py
 
       - name: Test and build executable JAR
         run: bash ./gradlew --no-daemon clean test bootJar
@@ -136,7 +138,7 @@ jobs:
           KEY: ${{ steps.addresses.outputs.key }}
         run: |
           set -euo pipefail
-          tar -czf "$RUNNER_TEMP/app.tar.gz" docker-compose.yml deploy.sh cleanup-app-images.sh
+          tar -czf "$RUNNER_TEMP/app.tar.gz" docker-compose.yml deploy.sh cleanup-app-images.sh post-deploy.sh
           aws s3 cp "$RUNNER_TEMP/app.tar.gz" "s3://$BUCKET/$KEY" \
             --sse AES256 --only-show-errors
 
@@ -164,8 +166,8 @@ jobs:
           KEY: ${{ steps.addresses.outputs.key }}
           IMAGE: ${{ steps.addresses.outputs.repository }}@${{ steps.image.outputs.digest }}
           SSM_DELIVERY_SECONDS: "60"
-          SSM_EXECUTION_SECONDS: "1020"
-          SSM_POLL_SECONDS: "1140"
+          SSM_EXECUTION_SECONDS: "1080"
+          SSM_POLL_SECONDS: "1200"
           AWS_MAX_ATTEMPTS: "1"
         run: |
           set -euo pipefail
@@ -188,7 +190,12 @@ jobs:
             aws s3 cp "s3://__BUCKET__/__KEY__" "$STAGE/app.tar.gz" --only-show-errors
           timeout --kill-after=5s 30s tar -xzf "$STAGE/app.tar.gz" -C "$STAGE"
           # Send TERM after 8 minutes, then allow up to 6 minutes for rollback.
-          APP_PROFILE=dev timeout --kill-after=360s 480s bash "$STAGE/deploy.sh" "__IMAGE__"
+          APP_PROFILE=dev POST_DEPLOY_CONTEXT="$STAGE/previous-image-id" \
+            timeout --kill-after=360s 480s bash "$STAGE/deploy.sh" "__IMAGE__"
+          # 배포 성공 뒤 별도 30초 제한으로 정리한다. 정리 시간 초과는 배포 실패가 아니다.
+          if ! timeout --kill-after=5s 30s bash "$STAGE/post-deploy.sh" "__IMAGE__" "$STAGE/previous-image-id"; then
+            echo "[deploy] 이미지 정리 실패 또는 시간 초과. 배포는 성공했습니다." >&2
+          fi
           REMOTE
 
           sed -i \
