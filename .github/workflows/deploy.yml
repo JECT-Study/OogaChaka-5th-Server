@@ -28,7 +28,10 @@ jobs:
           java-version: "17"
 
       - name: Check deployment script
-        run: bash -n deploy.sh
+        run: |
+          bash -n deploy.sh
+          bash -n cleanup-app-images.sh
+          python3 scripts/test_image_cleanup.py
 
       - name: Test and build executable JAR
         run: bash ./gradlew --no-daemon clean test bootJar
@@ -133,7 +136,7 @@ jobs:
           KEY: ${{ steps.addresses.outputs.key }}
         run: |
           set -euo pipefail
-          tar -czf "$RUNNER_TEMP/app.tar.gz" docker-compose.yml deploy.sh
+          tar -czf "$RUNNER_TEMP/app.tar.gz" docker-compose.yml deploy.sh cleanup-app-images.sh
           aws s3 cp "$RUNNER_TEMP/app.tar.gz" "s3://$BUCKET/$KEY" \
             --sse AES256 --only-show-errors
 
@@ -185,7 +188,7 @@ jobs:
             aws s3 cp "s3://__BUCKET__/__KEY__" "$STAGE/app.tar.gz" --only-show-errors
           timeout --kill-after=5s 30s tar -xzf "$STAGE/app.tar.gz" -C "$STAGE"
           # Send TERM after 8 minutes, then allow up to 6 minutes for rollback.
-          timeout --kill-after=360s 480s bash "$STAGE/deploy.sh" "__IMAGE__"
+          APP_PROFILE=dev timeout --kill-after=360s 480s bash "$STAGE/deploy.sh" "__IMAGE__"
           REMOTE
 
           sed -i \

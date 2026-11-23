@@ -43,7 +43,8 @@ AWS 인증은 OIDC를 사용한다.
 `/ooga/app/runtime-gwangmin-20261108-01`
 
 이 경로는 현재 초기 구성에서 사용하는 이름이다.
-변경 시 deploy.sh의 PARAMETER도 함께 변경한다.
+dev는 이 경로를 그대로 사용한다. 다른 경로는 deploy.sh 실행 시 APP_RUNTIME_PARAMETER로 지정할 수 있다.
+prod는 이 dev 경로를 재사용할 수 없으며 별도 APP_RUNTIME_PARAMETER가 필요하다.
 
 EC2가 배포할 때 값을 조회하여 다음 파일에 저장한다.
 
@@ -72,12 +73,48 @@ DB와 Redis 주소는 EC2에서 접근 가능한 주소를 사용한다.
 | 경로 | 용도 |
 | --- | --- |
 | /opt/ooga/app/docker-compose.yml | 앱 실행 구성 |
-| /opt/ooga/app/.env | APP_IMAGE 주소 |
+| /opt/ooga/app/.env | APP_IMAGE 주소와 APP_PROFILE |
 | /opt/ooga/app/.env.runtime | 앱 실행 설정·비밀값 |
 
 이미지는 Git 커밋 SHA로 태그하고, EC2에는 이미지 digest를 지정하여 배포한다.
-배포 파일 묶음에는 docker-compose.yml과 deploy.sh만 포함한다.
+배포 파일 묶음에는 docker-compose.yml, deploy.sh, cleanup-app-images.sh를 포함한다.
 실행 비밀값은 S3 배포 묶음에 포함하지 않는다.
+
+## 실행 프로필
+
+같은 Docker 이미지를 사용하고 실행할 때 프로필을 선택한다.
+
+| 프로필 | 사용 환경 | 설정 |
+| --- | --- | --- |
+| local | IntelliJ·내 맥 | application-local-defaults.properties + 개인 application-local.properties |
+| dev | 현재 테스트 EC2 | application-dev.properties + SSM 환경변수 |
+| prod | 추후 운영 EC2 | application-prod.properties + 별도 운영 SSM 환경변수 |
+
+현재 GitHub Actions는 dev에만 배포하고 APP_PROFILE=dev를 지정한다.
+배포 스크립트는 APP_PROFILE을 .env에 저장하고 Compose가 SPRING_PROFILES_ACTIVE로 전달한다.
+.env.runtime에 프로필 이름이 있어도 Compose의 선택이 우선한다.
+배포 스크립트는 local이나 알 수 없는 프로필로 서버를 배포하지 않는다.
+prod 설정은 준비 단계이며 main 자동 배포·운영 서버 생성·운영 IAM 변경은 포함하지 않는다.
+
+prod에는 운영 DB·Flyway 계정, Redis, CORS, Jasypt/AES/HMAC/JWT 키를 따로 준비한다.
+사용하는 OAuth 제공자의 client-id·secret·redirect-uri도 운영 값으로 전달한다.
+설정값을 수정한 뒤 재배포해야 실행 중인 앱에 반영된다.
+GitHub Secrets에서 SSM으로 값을 복사하는 단계는 없으며 비밀값의 기준은 Parameter Store다.
+
+## 오래된 앱 이미지 정리
+
+기동 확인에 성공한 뒤 cleanup-app-images.sh를 호출한다.
+현재 배포 이미지와 직전 성공 배포의 이미지 ID를 보존하고,
+동일 앱 저장소의 이미지 중 생성 후 72시간이 지난 이미지만 삭제를 시도한다.
+성공한 이미지 ID는 `/opt/ooga/app/.last-successful-image-id`, 직전 버전은 `.previous-successful-image-id`에 기록한다.
+같은 이미지를 재배포해도 직전의 다른 정상 버전을 계속 보존한다.
+기록이 없는 최초 적용 때는 삭제 없이 현재 성공 이미지부터 기록한다.
+이후 실패한 배포는 기록을 갱신하지 않아 직전 정상 이미지를 계속 보호한다.
+
+강제 삭제·전체 image prune·system prune·볼륨 삭제는 사용하지 않는다.
+다른 컨테이너가 사용하는 이미지나 여러 저장소 참조로 삭제가 거부된 이미지는 보존한다.
+정리 오류는 이미 완료된 배포를 실패로 바꾸지 않는다.
+ECR 보관 정책은 변경하지 않는다. 실패한 배포에서는 이미지 정리를 실행하지 않는다.
 
 ## 기동 확인
 

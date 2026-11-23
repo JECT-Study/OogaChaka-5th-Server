@@ -12,6 +12,7 @@ services:
 
     environment:
       SERVER_PORT: "8080"
+      SPRING_PROFILES_ACTIVE: ${APP_PROFILE:-dev}
 
     logging:
       driver: json-file

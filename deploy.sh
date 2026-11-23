@@ -3,8 +3,19 @@ set -Eeuo pipefail
 umask 077
 
 IMAGE="${1:?배포할 이미지 주소가 필요합니다}"
+# 배포 대상 프로필은 이미지 빌드와 분리해 실행할 때 지정한다.
+APP_PROFILE="${APP_PROFILE:-dev}"
+case "$APP_PROFILE" in
+    dev|prod) ;;
+    *) echo "[deploy] APP_PROFILE은 dev 또는 prod여야 합니다." >&2; exit 1 ;;
+esac
 REGION="ap-northeast-2"
-PARAMETER="/ooga/app/runtime-gwangmin-20261108-01"
+DEV_PARAMETER="/ooga/app/runtime-gwangmin-20261108-01"
+PARAMETER="${APP_RUNTIME_PARAMETER:-$DEV_PARAMETER}"
+if [ "$APP_PROFILE" = prod ] && { [ -z "${APP_RUNTIME_PARAMETER:-}" ] || [ "$PARAMETER" = "$DEV_PARAMETER" ]; }; then
+    echo "[deploy] prod는 별도의 APP_RUNTIME_PARAMETER를 지정해야 합니다." >&2
+    exit 1
+fi
 DEST="/opt/ooga/app"
 SOURCE="$(cd "$(dirname "$0")" && pwd)"
 APP_CONTAINER="oogachaka-app"
@@ -190,7 +201,7 @@ trap 'rollback 143' TERM
 
 echo "[deploy] 실행 설정 준비"
 cp "$SOURCE/docker-compose.yml" "$STAGE/docker-compose.yml"
-printf 'APP_IMAGE=%s\n' "$IMAGE" > "$STAGE/.env"
+printf 'APP_IMAGE=%s\nAPP_PROFILE=%s\n' "$IMAGE" "$APP_PROFILE" > "$STAGE/.env"
 
 aws ssm get-parameter \
     --name "$PARAMETER" \
@@ -258,3 +269,29 @@ if [ -n "$LEGACY_CONTAINER" ]; then
         echo "[deploy] 보관한 기존 컨테이너를 정리하지 못했습니다: $legacy_name" >&2
 fi
 echo "[deploy] 기동 확인 완료: $IMAGE"
+
+# 성공한 이미지 ID를 기록해 실패한 배포가 다음 정리의 보호 대상을 바꾸지 않게 한다.
+finish_image_cleanup() {
+    local last_id="" previous_id="" current_id
+    if [ -f "$DEST/.last-successful-image-id" ]; then
+        last_id="$(cat "$DEST/.last-successful-image-id")" || return 1
+    fi
+    if [ -f "$DEST/.previous-successful-image-id" ]; then
+        previous_id="$(cat "$DEST/.previous-successful-image-id")" || return 1
+    fi
+    current_id="$(docker image inspect --format '{{.Id}}' "$IMAGE")" || return 1
+    # 같은 이미지를 재배포해도 직전의 다른 정상 버전은 계속 보호한다.
+    if [ "$current_id" != "$last_id" ]; then
+        previous_id="$last_id"
+    fi
+    printf '%s\n' "$previous_id" > "$STAGE/previous-successful-image-id" || return 1
+    printf '%s\n' "$current_id" > "$STAGE/last-successful-image-id" || return 1
+    install -m 600 "$STAGE/previous-successful-image-id" "$DEST/.previous-successful-image-id" || return 1
+    install -m 600 "$STAGE/last-successful-image-id" "$DEST/.last-successful-image-id" || return 1
+    bash "$SOURCE/cleanup-app-images.sh" "$IMAGE" "$previous_id"
+}
+
+# 정리 오류는 완료된 배포를 실패로 바꾸지 않는다.
+if ! finish_image_cleanup; then
+    echo "[deploy] 이전 앱 이미지 정리를 완료하지 못했습니다. 배포는 성공했습니다." >&2
+fi
