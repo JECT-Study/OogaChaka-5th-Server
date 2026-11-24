@@ -81,17 +81,20 @@ Content-Type: application/json
 }
 ```
 
-부모 초대 화면은 `GET /api/v1/families/me`에서 자녀 구성원의 `connected`가 `true`가 되면 연결 완료 화면으로 넘어간다.
-코드를 사용하면 `inviteCode`는 `null`로 내려온다.
+입장 응답이 404 `FAMILY_INVITE_CODE_NOT_FOUND`이면(코드 입력 오류·만료·이미 사용) 자녀는 부모에게 새 코드를 받아 다시 입력한다.
 
-앱 재설치·기기 변경 시 부모가 `POST /api/v1/families/me/invite-code`로 새 코드를 발급하면 이전 코드는 즉시 무효가 된다.
+부모 초대 화면은 `GET /api/v1/families/me`에서 자녀 구성원의 `connected`가 `true`가 되면 연결 완료 화면으로 넘어간다.
+코드를 사용했거나 코드가 만료되면 `inviteCode`는 `null`로 내려온다.
+`connected=false`이고 `inviteCode`가 `null`이면 코드가 만료된 것으로 보고 부모 초대 화면에 재발급 버튼을 표시한다.
+
+코드가 만료됐거나 앱 재설치·기기 변경 시 부모가 `POST /api/v1/families/me/invite-code`로 새 코드를 발급하면 이전 코드는 즉시 무효가 된다.
 응답의 `data`에는 새 코드와 만료 시각이 담긴다.
 
 ```json
 {"inviteCode":"R8NW3A","inviteCodeExpiresAt":"2026-11-24T05:05:00Z"}
 ```
 
-자녀가 새 코드로 입장하면 같은 자녀 계정으로 로그인하며 `isNewUser`는 `false`다.
+이미 연결된 자녀가 새 코드로 입장하면 같은 자녀 계정으로 로그인하며 `isNewUser`는 `false`다.
 이미 로그인한 기기는 보관한 refresh가 만료되기 전(기본 14일)에 토큰을 갱신해 로그인을 유지할 수 있다.
 
 ## 갱신과 로그아웃
