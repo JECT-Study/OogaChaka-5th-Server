@@ -8,8 +8,6 @@ import org.springframework.data.jpa.repository.Lock;
 
 public interface FamilyRepository extends JpaRepository<Family, Long> {
 
-    boolean existsByInviteCode(String inviteCode);
-
     Optional<Family> findByInviteCode(String inviteCode);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

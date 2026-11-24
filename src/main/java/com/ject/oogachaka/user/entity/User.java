@@ -44,4 +44,12 @@ public class User extends BaseTimeEntity {
     public void joinFamily(Long familyMemberId) {
         this.familyMemberId = familyMemberId;
     }
+
+    public static User create(String nickname, String profileImageUrl) {
+        return User.builder()
+                .nickname(nickname)
+                .profileImageUrl(profileImageUrl)
+                .point(0)
+                .build();
+    }
 }

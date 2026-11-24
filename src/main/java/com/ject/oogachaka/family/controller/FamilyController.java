@@ -2,6 +2,7 @@ package com.ject.oogachaka.family.controller;
 
 import com.ject.oogachaka.auth.dto.SocialLoginResponse;
 import com.ject.oogachaka.auth.service.TokenService;
+import com.ject.oogachaka.family.dto.FamilyCreateRequest;
 import com.ject.oogachaka.family.dto.FamilyInviteCodeResponse;
 import com.ject.oogachaka.family.dto.FamilyInviteResponse;
 import com.ject.oogachaka.family.dto.FamilyJoinRequest;
@@ -32,8 +33,9 @@ public class FamilyController implements FamilyControllerDocs {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<FamilyResponse> createFamily(@AuthenticationPrincipal Long userId) {
-        return ApiResponse.success(SuccessCode.CREATED, familyService.createFamily(userId));
+    public ApiResponse<FamilyResponse> createFamily(@AuthenticationPrincipal Long userId,
+                                                   @Valid @RequestBody FamilyCreateRequest request) {
+        return ApiResponse.success(SuccessCode.CREATED, familyService.createFamily(userId, request));
     }
 
     @GetMapping("/me")

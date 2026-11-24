@@ -1,7 +1,6 @@
 package com.ject.oogachaka.family.entity;
 
 import com.ject.oogachaka.global.entity.BaseTimeEntity;
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -14,6 +13,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * 가족
+ * 초대코드는 Redis(InviteCodeStore)에 두며 기존 invite_code 컬럼은 쓰지 않는다.
  */
 @Getter
 @Entity
@@ -26,14 +26,8 @@ public class Family extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 가족 초대 코드 */
-    @Column(length = 64, unique = true)
-    private String inviteCode;
-
-    public static Family create(String inviteCode) {
-        return Family.builder()
-                .inviteCode(inviteCode)
-                .build();
+    public static Family create() {
+        return Family.builder().build();
     }
 
     public void reissueInviteCode(String inviteCode) {
