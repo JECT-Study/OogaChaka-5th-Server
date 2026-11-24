@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -39,10 +40,18 @@ public class FamilyMember extends BaseTimeEntity {
     @Column(nullable = false, length = 32)
     private FamilyRole familyRole;
 
+    /** 가족에 처음 연결된 일시 */
+    @Column
+    private LocalDateTime connectedAt;
+
     public static FamilyMember create(Long familyId, FamilyRole familyRole) {
         return FamilyMember.builder()
                 .familyId(familyId)
                 .familyRole(familyRole)
                 .build();
+    }
+
+    public void connect(LocalDateTime connectedAt) {
+        this.connectedAt = connectedAt;
     }
 }
