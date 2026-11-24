@@ -88,6 +88,7 @@ Content-Type: application/json
 `connected=false`이고 `inviteCode`가 `null`이면 코드가 만료된 것으로 보고 부모 초대 화면에 재발급 버튼을 표시한다.
 
 코드가 만료됐거나 앱 재설치·기기 변경 시 부모가 `POST /api/v1/families/me/invite-code`로 새 코드를 발급하면 이전 코드는 즉시 무효가 된다.
+이미 연결된 자녀는 `connected`가 계속 `true`이므로 앱 재설치·기기 변경용 재발급 화면에서는 이 값으로 연결 완료를 판단하지 않는다.
 응답의 `data`에는 새 코드와 만료 시각이 담긴다.
 
 ```json
