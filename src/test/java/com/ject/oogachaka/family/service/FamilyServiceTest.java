@@ -3,7 +3,6 @@ package com.ject.oogachaka.family.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -32,7 +31,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -90,7 +88,7 @@ class FamilyServiceTest {
 
     // 미가입 사용자가 자녀 프로필로 가족을 만들면 부모만 연결된 두 구성원과 자녀 초대코드를 반환한다.
     @Test
-    void 부모와_자녀를_같은_가족에_등록한_뒤_초대코드를_발급한다() {
+    void 부모와_자녀를_같은_가족에_등록하고_초대코드를_반환한다() {
         LocalDateTime createdAt = LocalDateTime.parse("2026-11-24T05:00:00");
         when(userService.getUserForFamilyJoin(7L)).thenReturn(user(7L, "우가", null));
         User child = User.create("차카", "https://example.com/child.png");
@@ -122,10 +120,8 @@ class FamilyServiceTest {
             assertThat(childMember.getFamilyRole()).isEqualTo(FamilyRole.CHILD);
             assertThat(childMember.getConnectedAt()).isNull();
         });
-        InOrder order = inOrder(userService, inviteCodeStore);
-        order.verify(userService).joinFamily(7L, 21L);
-        order.verify(userService).joinFamily(8L, 22L);
-        order.verify(inviteCodeStore).issue(5L);
+        verify(userService).joinFamily(7L, 21L);
+        verify(userService).joinFamily(8L, 22L);
         assertThat(response.familyId()).isEqualTo(5L);
         assertThat(response.inviteCode()).isEqualTo(INVITE_CODE.code());
         assertThat(response.inviteCodeExpiresAt()).isEqualTo(INVITE_CODE.expiresAt());

@@ -93,29 +93,29 @@ class InviteCodeStoreTest {
         verify(values, never()).setGet(eq(FAMILY_KEY), anyString(), eq(TTL));
     }
 
-    // 가족 키에 코드가 있고 TTL이 72초면 현재 시각에서 72초 뒤를 해당 코드의 만료 시각으로 반환한다.
+    // 가족 키가 가리키는 코드 키의 TTL이 72초면 현재 시각에서 72초 뒤를 만료 시각으로 반환한다.
     @Test
-    void 가족_키의_남은_시간으로_만료_시각을_계산한다() {
+    void 코드_키의_남은_시간으로_만료_시각을_계산한다() {
         when(values.get(FAMILY_KEY)).thenReturn("K7MP2Q");
-        when(redis.getExpire(FAMILY_KEY)).thenReturn(72L);
+        when(redis.getExpire(CODE_PREFIX + "K7MP2Q")).thenReturn(72L);
 
         assertThat(store.find(5L)).contains(new InviteCode("K7MP2Q", OffsetDateTime.parse("2026-11-24T05:01:12Z")));
     }
 
-    // 코드 키에서 가족 ID를 꺼내면 부모 화면에 쓴 코드가 남지 않도록 그 가족 키도 삭제한다.
+    // 가족 키에 이미 꺼내 쓴 코드가 남아 있어도 코드 키가 없으면 조회 결과는 비어 있다.
     @Test
-    void 코드를_소비하면_가족_ID를_반환하고_가족_키를_지운다() {
+    void 가족_키에_남은_사용된_코드는_조회되지_않는다() {
+        when(values.get(FAMILY_KEY)).thenReturn("K7MP2Q");
+        when(redis.getExpire(CODE_PREFIX + "K7MP2Q")).thenReturn(-2L);
+
+        assertThat(store.find(5L)).isEmpty();
+    }
+
+    // 코드 키에서 가족 ID 문자열을 꺼내면 숫자로 변환해 반환한다.
+    @Test
+    void 코드를_꺼내면_해당_가족_ID를_반환한다() {
         when(values.getAndDelete(CODE_PREFIX + "K7MP2Q")).thenReturn("5");
 
         assertThat(store.consume("K7MP2Q")).contains(5L);
-        verify(redis).delete(FAMILY_KEY);
-    }
-
-    // 코드 키가 없으면 빈 결과를 반환하고 어떤 가족 키도 삭제하지 않는다.
-    @Test
-    void 없는_코드는_가족_키를_지우지_않는다() {
-        assertThat(store.consume("K7MP2Q")).isEmpty();
-        verify(values).getAndDelete(CODE_PREFIX + "K7MP2Q");
-        verify(redis, never()).delete(anyString());
     }
 }

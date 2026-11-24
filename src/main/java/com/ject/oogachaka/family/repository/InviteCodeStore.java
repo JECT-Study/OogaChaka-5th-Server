@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * 가족별로 현재 유효한 자녀 초대코드를 Redis에 보관한다.
- * 자녀 첫 입장 API(5-39)는 consume으로 코드를 한 번만 꺼내 쓴다.
+ * 자녀 입장 API(5-39)는 consume으로 코드를 한 번만 꺼내 쓴다.
  */
 @Repository
 @RequiredArgsConstructor
@@ -47,12 +47,12 @@ public class InviteCodeStore {
     }
 
     public Optional<InviteCode> find(Long familyId) {
-        String key = familyKey(familyId);
-        String code = redis.opsForValue().get(key);
+        String code = redis.opsForValue().get(familyKey(familyId));
         if (code == null) {
             return Optional.empty();
         }
-        long remainingSeconds = redis.getExpire(key);
+        // 이미 꺼내 쓴 코드는 가족 키에 남아 있어도 코드 키가 없어 조회되지 않는다.
+        long remainingSeconds = redis.getExpire(codeKey(code));
         if (remainingSeconds < 0) {
             return Optional.empty();
         }
@@ -64,9 +64,7 @@ public class InviteCodeStore {
         if (value == null) {
             return Optional.empty();
         }
-        Long familyId = Long.valueOf(value);
-        redis.delete(familyKey(familyId));
-        return Optional.of(familyId);
+        return Optional.of(Long.valueOf(value));
     }
 
     private String generateCode() {
