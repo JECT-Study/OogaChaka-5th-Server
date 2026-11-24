@@ -29,8 +29,4 @@ public class Family extends BaseTimeEntity {
     public static Family create() {
         return Family.builder().build();
     }
-
-    public void reissueInviteCode(String inviteCode) {
-        this.inviteCode = inviteCode;
-    }
 }

@@ -12,7 +12,6 @@ public final class AuthRequestMatchers {
         PathPatternRequestMatcher.pathPattern(HttpMethod.GET, "/api/v1/auth/{provider}/authorize"),
         PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/api/v1/auth/social-login"),
         PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/api/v1/auth/refresh"),
-        PathPatternRequestMatcher.pathPattern(HttpMethod.GET, "/api/v1/families/invites/{inviteCode}"),
         PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/api/v1/families/join")
     );
 

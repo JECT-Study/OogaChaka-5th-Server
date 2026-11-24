@@ -2,7 +2,6 @@ package com.ject.oogachaka.family.service;
 
 import com.ject.oogachaka.family.dto.FamilyCreateRequest;
 import com.ject.oogachaka.family.dto.FamilyInviteCodeResponse;
-import com.ject.oogachaka.family.dto.FamilyInviteResponse;
 import com.ject.oogachaka.family.dto.FamilyMemberResponse;
 import com.ject.oogachaka.family.dto.FamilyResponse;
 import com.ject.oogachaka.family.entity.Family;
@@ -16,6 +15,7 @@ import com.ject.oogachaka.global.exception.BusinessException;
 import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.user.entity.User;
 import com.ject.oogachaka.user.service.UserService;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -90,40 +90,24 @@ public class FamilyService {
             .toList());
     }
 
-    public FamilyInviteResponse getInvite(String inviteCode) {
-        Family family = familyRepository.findByInviteCode(normalizeInviteCode(inviteCode))
+    @Transactional
+    public ChildJoinResult joinAsChild(String inviteCode) {
+        Long familyId = inviteCodeStore.consume(normalizeInviteCode(inviteCode))
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
-        List<FamilyMember> members = familyMemberRepository.findAllByFamilyIdOrderByIdAsc(family.getId());
-        List<Long> parentIds = members.stream()
-            .filter(member -> member.getFamilyRole() == FamilyRole.PARENT)
-            .map(FamilyMember::getId)
-            .toList();
-        boolean childJoined = members.stream().anyMatch(member -> member.getFamilyRole() == FamilyRole.CHILD);
-        return FamilyInviteResponse.of(userService.listUsersByFamilyMemberIds(parentIds), childJoined);
+        // 가족 생성이 롤백되면 자녀 구성원 없이 초대코드만 Redis에 최대 5분간 남을 수 있다.
+        FamilyMember child = familyMemberRepository.findAllByFamilyIdAndFamilyRole(familyId, FamilyRole.CHILD)
+            .stream().findFirst()
+            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
+        Long userId = userService.listUserIdsByFamilyMemberIds(List.of(child.getId())).stream().findFirst()
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        boolean firstConnection = child.getConnectedAt() == null;
+        if (firstConnection) {
+            child.connect(LocalDateTime.now());
+        }
+        return new ChildJoinResult(userId, firstConnection);
     }
 
-    @Transactional
-    public ChildJoinResult joinAsChild(String inviteCode, String nickname) {
-        Family family = familyRepository.findForChildJoinByInviteCode(normalizeInviteCode(inviteCode))
-            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_INVITE_CODE_NOT_FOUND));
-        List<FamilyMember> children = familyMemberRepository.findAllByFamilyIdAndFamilyRole(family.getId(), FamilyRole.CHILD);
-        if (!children.isEmpty()) {
-            Long memberId = children.get(0).getId();
-            Long userId = userService.listUserIdsByFamilyMemberIds(List.of(memberId)).stream().findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-            return new ChildJoinResult(userId, false);
-        }
-
-        if (nickname == null || nickname.isBlank()) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        User user = userService.createUser(nickname);
-        FamilyMember child = familyMemberRepository.save(FamilyMember.create(family.getId(), FamilyRole.CHILD));
-        userService.joinFamily(user.getId(), child.getId());
-        return new ChildJoinResult(user.getId(), true);
-    }
-
-    @Transactional
     public FamilyInviteCodeResponse reissueInviteCode(Long userId) {
         Long memberId = userService.getUser(userId).getFamilyMemberId();
         if (memberId == null) {
@@ -134,13 +118,10 @@ public class FamilyService {
         if (member.getFamilyRole() != FamilyRole.PARENT) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        Family family = familyRepository.findById(member.getFamilyId())
-            .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
-        family.reissueInviteCode(inviteCodeGenerator.generate());
-        return FamilyInviteCodeResponse.from(family);
+        return FamilyInviteCodeResponse.from(inviteCodeStore.issue(member.getFamilyId()));
     }
 
-    // 생성기는 대문자와 숫자만 사용하므로 대문자로 변환해도 서로 다른 가족의 코드가 겹치지 않는다.
+    // 초대코드는 영문 대문자와 숫자로만 발급한다.
     private String normalizeInviteCode(String inviteCode) {
         return inviteCode.strip().toUpperCase(Locale.ROOT);
     }

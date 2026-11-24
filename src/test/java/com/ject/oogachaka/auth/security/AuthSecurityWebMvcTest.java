@@ -133,22 +133,20 @@ class AuthSecurityWebMvcTest {
             .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", "https://app.example"));
     }
 
-    // 헤더가 없거나 만료된 access가 있어도 초대 조회와 자녀 입장은 JWT 검증 없이 성공한다.
+    // 헤더가 없거나 만료된 access가 있어도 자녀 입장은 JWT 검증 없이 성공한다.
     @ParameterizedTest
     @NullSource
     @ValueSource(strings = "Bearer TEST_ONLY_EXPIRED")
-    void 초대_조회와_자녀_입장은_공개한다(String authorization) throws Exception {
+    void 자녀_입장은_JWT_검증을_건너뛴다(String authorization) throws Exception {
         HttpHeaders headers = new HttpHeaders();
         if (authorization != null) {
             headers.set(HttpHeaders.AUTHORIZATION, authorization);
         }
         when(jwt.validate("TEST_ONLY_EXPIRED", TokenType.ACCESS)).thenThrow(new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED));
-        when(familyService.joinAsChild("ABCD2345", null)).thenReturn(new ChildJoinResult(43L, false));
+        when(familyService.joinAsChild("K7MP2Q")).thenReturn(new ChildJoinResult(43L, false));
 
-        mvc.perform(get("/api/v1/families/invites/ABCD2345").headers(headers))
-            .andExpect(status().isOk());
         mvc.perform(post("/api/v1/families/join").headers(headers).contentType("application/json")
-                .content("{\"inviteCode\":\"ABCD2345\"}"))
+                .content("{\"inviteCode\":\"K7MP2Q\"}"))
             .andExpect(status().isOk());
         verifyNoInteractions(jwt);
     }
