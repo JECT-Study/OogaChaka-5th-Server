@@ -18,6 +18,7 @@ import com.ject.oogachaka.family.service.ChildJoinResult;
 import com.ject.oogachaka.family.service.FamilyService;
 import com.ject.oogachaka.global.exception.BusinessException;
 import com.ject.oogachaka.global.exception.GlobalExceptionHandler;
+import com.ject.oogachaka.global.response.ApiResponseStatusAdvice;
 import com.ject.oogachaka.global.response.code.ErrorCode;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -52,7 +53,7 @@ class FamilyControllerTest {
     void setUp() {
         mvc = MockMvcBuilders.standaloneSetup(new FamilyController(service, tokens))
             .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-            .setControllerAdvice(new GlobalExceptionHandler()).build();
+            .setControllerAdvice(new GlobalExceptionHandler(), new ApiResponseStatusAdvice()).build();
         SecurityContextHolder.getContext().setAuthentication(
             UsernamePasswordAuthenticationToken.authenticated(7L, null, List.of()));
     }
