@@ -13,7 +13,7 @@ public record FamilyMemberResponse(
     @Schema(description = "자녀가 초대코드로 입장해 연결됐는지 여부. 부모는 항상 true") boolean connected) {
 
     public static FamilyMemberResponse of(FamilyMember member, User user) {
-        // V5 이전에 가입한 부모는 연결 일시가 없어도 연결된 구성원이다.
+        // 이전에 가입한 부모는 연결 일시가 없어도 연결된 구성원이다.
         boolean connected = member.getFamilyRole() == FamilyRole.PARENT || member.getConnectedAt() != null;
         return new FamilyMemberResponse(user.getId(), user.getNickname(), user.getProfileImageUrl(),
             member.getFamilyRole(), connected);

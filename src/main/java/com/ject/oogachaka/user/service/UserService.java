@@ -41,9 +41,9 @@ public class UserService {
         return userRepository.findAllByFamilyMemberIdIn(familyMemberIds);
     }
 
-    /** 부모가 정한 프로필로 자녀 사용자를 만든다. */
+    /** 가족 생성과 같은 트랜잭션에서만 부모가 정한 프로필로 자녀 사용자를 만든다. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public User createUser(String nickname, String profileImageUrl) {
-        return userRepository.save(User.create(nickname, profileImageUrl));
+    public User createChildUser(String nickname, String profileImageUrl) {
+        return userRepository.save(User.createChild(nickname, profileImageUrl));
     }
 }

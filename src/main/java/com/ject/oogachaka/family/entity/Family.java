@@ -13,7 +13,6 @@ import lombok.NoArgsConstructor;
 
 /**
  * 가족
- * 초대코드는 Redis(InviteCodeStore)에 두며 기존 invite_code 컬럼은 쓰지 않는다.
  */
 @Getter
 @Entity

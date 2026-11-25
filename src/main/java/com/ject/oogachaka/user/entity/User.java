@@ -41,15 +41,16 @@ public class User extends BaseTimeEntity {
                 .build();
     }
 
-    public void joinFamily(Long familyMemberId) {
-        this.familyMemberId = familyMemberId;
-    }
-
-    public static User create(String nickname, String profileImageUrl) {
+    // 자녀는 로그인 없이 부모가 정한 닉네임·이미지로 만든다.
+    public static User createChild(String nickname, String profileImageUrl) {
         return User.builder()
                 .nickname(nickname)
                 .profileImageUrl(profileImageUrl)
                 .point(0)
                 .build();
+    }
+
+    public void joinFamily(Long familyMemberId) {
+        this.familyMemberId = familyMemberId;
     }
 }
