@@ -110,7 +110,7 @@ P3: 엔티티 생성 메서드가 API 요청 DTO에 직접 의존합니다.
 
 - 일반 JSON API가 ApiResponse<T>의 code·message·data 구조를 사용하는지 확인한다.
 - 성공은 SuccessCode, 실패는 ErrorCode를 사용하며, 데이터가 없으면 data가 null인지 확인한다.
-- HTTP 상태와 비즈니스 응답 코드를 혼동하지 않는지 확인한다. 본문에 CREATED를 넣는 것만으로 HTTP 201이 설정되지는 않는다.
+- HTTP 상태는 `ApiResponseStatusAdvice`가 `ApiResponse`의 SuccessCode·ErrorCode 상태로 맞춘다. 컨트롤러에 `@ResponseStatus`를 따로 붙이지 않고, 생성 API가 `SuccessCode.CREATED`로 응답하는지 확인한다.
 - 실패 응답이 원칙적으로 Advice에서 생성되고 ErrorCode에 맞는 HTTP 상태를 반환하는지 확인한다.
 
 **허용 예외**

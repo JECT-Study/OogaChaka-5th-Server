@@ -29,7 +29,10 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "존재하지 않는 사용자입니다."),
     DUPLICATE_USER(HttpStatus.CONFLICT, "DUPLICATE_USER", "중복된 사용자입니다."),
 
-    INVALID_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_SCHEDULE_TIME", "올바르지 않은 일정 시간입니다.");
+    INVALID_SCHEDULE_TIME(HttpStatus.BAD_REQUEST, "INVALID_SCHEDULE_TIME", "올바르지 않은 일정 시간입니다."),
+
+    FAMILY_ALREADY_JOINED(HttpStatus.CONFLICT, "FAMILY_ALREADY_JOINED", "이미 가족에 속한 사용자입니다."),
+    FAMILY_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY_NOT_FOUND", "속한 가족이 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

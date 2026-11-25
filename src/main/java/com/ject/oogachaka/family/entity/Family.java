@@ -1,7 +1,6 @@
 package com.ject.oogachaka.family.entity;
 
 import com.ject.oogachaka.global.entity.BaseTimeEntity;
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -26,13 +25,7 @@ public class Family extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 가족 초대 코드 */
-    @Column(length = 64, unique = true)
-    private String inviteCode;
-
-    public static Family create(String inviteCode) {
-        return Family.builder()
-                .inviteCode(inviteCode)
-                .build();
+    public static Family create() {
+        return Family.builder().build();
     }
 }
