@@ -45,7 +45,7 @@ public class FamilyService {
 
     @Transactional
     public FamilyResponse createFamily(Long userId, FamilyCreateRequest request) {
-        User user = userService.getUserForFamilyJoin(userId);
+        User user = userService.getUser(userId);
         if (user.getFamilyMemberId() != null) {
             throw new BusinessException(ErrorCode.FAMILY_ALREADY_JOINED);
         }
