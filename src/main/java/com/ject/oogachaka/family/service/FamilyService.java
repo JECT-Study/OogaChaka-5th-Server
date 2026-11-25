@@ -48,7 +48,7 @@ public class FamilyService {
 
     @Transactional
     public FamilyResponse createFamily(Long userId, FamilyCreateRequest request) {
-        User user = userService.getUserForFamilyJoin(userId);
+        User user = userService.getUser(userId);
         if (user.getFamilyMemberId() != null) {
             throw new BusinessException(ErrorCode.FAMILY_ALREADY_JOINED);
         }
@@ -59,7 +59,7 @@ public class FamilyService {
         parent = familyMemberRepository.save(parent);
         userService.joinFamily(userId, parent.getId());
 
-        User childUser = userService.createUser(request.childNickname(), request.childProfileImageUrl());
+        User childUser = userService.createChildUser(request.childNickname(), request.childProfileImageUrl());
         FamilyMember child = familyMemberRepository.save(FamilyMember.create(family.getId(), FamilyRole.CHILD));
         userService.joinFamily(childUser.getId(), child.getId());
 
@@ -73,17 +73,19 @@ public class FamilyService {
         if (memberId == null) {
             throw new BusinessException(ErrorCode.FAMILY_NOT_FOUND);
         }
-        FamilyMember requester = familyMemberRepository.findById(memberId)
+
+        FamilyMember familyMember = familyMemberRepository.findById(memberId)
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
-        Family family = familyRepository.findById(requester.getFamilyId())
+        Family family = familyRepository.findById(familyMember.getFamilyId())
             .orElseThrow(() -> new BusinessException(ErrorCode.FAMILY_NOT_FOUND));
 
         List<FamilyMember> members = familyMemberRepository.findAllByFamilyIdOrderByIdAsc(family.getId());
         List<Long> memberIds = members.stream().map(FamilyMember::getId).toList();
         Map<Long, User> usersByMemberId = userService.listUsersByFamilyMemberIds(memberIds).stream()
             .collect(Collectors.toMap(User::getFamilyMemberId, Function.identity()));
+
         // 초대코드는 자녀를 초대하는 부모에게만 보여 준다.
-        InviteCode inviteCode = requester.getFamilyRole() == FamilyRole.PARENT
+        InviteCode inviteCode = familyMember.getFamilyRole() == FamilyRole.PARENT
             ? inviteCodeStore.find(family.getId()).orElse(null) : null;
         return FamilyResponse.of(family, inviteCode, members.stream()
             .map(member -> FamilyMemberResponse.of(member, usersByMemberId.get(member.getId())))

@@ -80,7 +80,7 @@ class FamilyServiceTest {
     // 이미 구성원 ID가 있는 사용자가 가족 생성을 요청하면 FAMILY_ALREADY_JOINED로 거절한다.
     @Test
     void 이미_가족에_속하면_생성하지_않는다() {
-        when(userService.getUserForFamilyJoin(7L)).thenReturn(user(7L, "우가", 21L));
+        when(userService.getUser(7L)).thenReturn(user(7L, "우가", 21L));
 
         assertThatThrownBy(() -> service.createFamily(7L, REQUEST))
             .isInstanceOfSatisfying(BusinessException.class,
@@ -91,10 +91,10 @@ class FamilyServiceTest {
     @Test
     void 부모와_자녀를_같은_가족에_등록하고_초대코드를_반환한다() {
         LocalDateTime createdAt = LocalDateTime.parse("2026-11-24T05:00:00");
-        when(userService.getUserForFamilyJoin(7L)).thenReturn(user(7L, "우가", null));
-        User child = User.create("차카", "https://example.com/child.png");
+        when(userService.getUser(7L)).thenReturn(user(7L, "우가", null));
+        User child = User.createChild("차카", "https://example.com/child.png");
         ReflectionTestUtils.setField(child, "id", 8L);
-        when(userService.createUser("차카", "https://example.com/child.png")).thenReturn(child);
+        when(userService.createChildUser("차카", "https://example.com/child.png")).thenReturn(child);
         when(inviteCodeStore.issue(5L)).thenReturn(INVITE_CODE);
         when(familyRepository.save(any(Family.class))).thenAnswer(invocation -> {
             Family family = invocation.getArgument(0);

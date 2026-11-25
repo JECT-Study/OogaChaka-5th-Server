@@ -32,13 +32,6 @@ public class UserService {
         return userRepository.findAllByFamilyMemberIdIn(familyMemberIds).stream().map(User::getId).toList();
     }
 
-    // 동시에 들어온 가족 생성 요청이 같은 사용자를 미가입 상태로 읽지 않도록 한다.
-    @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
-    public User getUserForFamilyJoin(Long userId) {
-        return userRepository.findForFamilyJoinById(userId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    }
-
     @Transactional(propagation = Propagation.MANDATORY)
     public void joinFamily(Long userId, Long familyMemberId) {
         getUser(userId).joinFamily(familyMemberId);
@@ -48,9 +41,9 @@ public class UserService {
         return userRepository.findAllByFamilyMemberIdIn(familyMemberIds);
     }
 
-    /** 부모가 정한 프로필로 자녀 사용자를 만든다. */
+    /** 가족 생성과 같은 트랜잭션에서만 부모가 정한 프로필로 자녀 사용자를 만든다. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public User createUser(String nickname, String profileImageUrl) {
-        return userRepository.save(User.create(nickname, profileImageUrl));
+    public User createChildUser(String nickname, String profileImageUrl) {
+        return userRepository.save(User.createChild(nickname, profileImageUrl));
     }
 }

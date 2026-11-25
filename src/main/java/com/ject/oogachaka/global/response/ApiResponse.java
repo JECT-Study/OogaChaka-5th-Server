@@ -18,7 +18,7 @@ public class ApiResponse<T> {
     private final String message;
     private final T data;
 
-    // 본문에는 내보내지 않고 ApiResponseStatusAdvice가 HTTP 상태로 적용한다.
+    // JSON 본문에는 넣지 않고, ApiResponseStatusAdvice가 이 값을 응답의 HTTP 상태로 쓴다.
     @JsonIgnore
     private final HttpStatus httpStatus;
 
