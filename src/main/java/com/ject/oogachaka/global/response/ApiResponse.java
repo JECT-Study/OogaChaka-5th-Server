@@ -1,11 +1,13 @@
 package com.ject.oogachaka.global.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.ject.oogachaka.global.response.code.ErrorCode;
 import com.ject.oogachaka.global.response.code.SuccessCode;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
+import org.springframework.http.HttpStatus;
 
 @Getter
 @Builder(access = AccessLevel.PRIVATE)
@@ -15,6 +17,10 @@ public class ApiResponse<T> {
     private final String code;
     private final String message;
     private final T data;
+
+    // JSON 본문에는 넣지 않고, ApiResponseStatusAdvice가 이 값을 응답의 HTTP 상태로 쓴다.
+    @JsonIgnore
+    private final HttpStatus httpStatus;
 
     public static ApiResponse<Void> success() {
         return success(SuccessCode.OK, null);
@@ -29,6 +35,7 @@ public class ApiResponse<T> {
             .code(successCode.getCode())
             .message(successCode.getMessage())
             .data(data)
+            .httpStatus(successCode.getHttpStatus())
             .build();
     }
 
@@ -41,6 +48,7 @@ public class ApiResponse<T> {
             .code(errorCode.getCode())
             .message(message)
             .data(null)
+            .httpStatus(errorCode.getHttpStatus())
             .build();
     }
 }

@@ -18,6 +18,9 @@ import com.ject.oogachaka.auth.service.SocialLoginService;
 import com.ject.oogachaka.auth.service.TokenService;
 import com.ject.oogachaka.auth.token.JwtClaims;
 import com.ject.oogachaka.auth.token.JwtTokenProvider;
+import com.ject.oogachaka.family.controller.FamilyController;
+import com.ject.oogachaka.family.service.ChildJoinResult;
+import com.ject.oogachaka.family.service.FamilyService;
 import com.ject.oogachaka.global.config.CorsProperties;
 import com.ject.oogachaka.global.config.SecurityConfig;
 import com.ject.oogachaka.global.controller.HealthController;
@@ -28,12 +31,14 @@ import com.ject.oogachaka.global.response.code.ErrorCode;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -42,10 +47,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 실제 MVC·Security 설정으로 API의 공개 범위, 인증 응답과 CORS를 검증한다. JWT 검증과 업무 서비스는 목 객체로 대체한다. */
-@WebMvcTest(controllers = {AuthController.class, HealthController.class, AuthSecurityWebMvcTest.ProbeController.class},
+@WebMvcTest(controllers = {AuthController.class, FamilyController.class, HealthController.class, AuthSecurityWebMvcTest.ProbeController.class},
     properties = {"app.cors.allowed-origins=https://app.example"})
 @Import({SecurityConfig.class, JsonSecurityHandler.class, GlobalExceptionHandler.class,
-    AuthSecurityWebMvcTest.PropertiesConfig.class, AuthController.class, HealthController.class,
+    AuthSecurityWebMvcTest.PropertiesConfig.class, AuthController.class, FamilyController.class, HealthController.class,
     AuthSecurityWebMvcTest.ProbeController.class})
 class AuthSecurityWebMvcTest {
 
@@ -57,7 +62,10 @@ class AuthSecurityWebMvcTest {
     private SocialLoginService socialLogin;
     @MockitoBean
     private TokenService tokens;
+    @MockitoBean
+    private FamilyService familyService;
 
+    // 인증 헤더 없이 배포 상태를 조회하면 JWT 검증 없이 200을 반환한다.
     @Test
     void deploymentHealthEndpointIsPublic() throws Exception {
         mvc.perform(get("/health")).andExpect(status().isOk());
@@ -123,6 +131,33 @@ class AuthSecurityWebMvcTest {
         mvc.perform(options("/api/v1/auth/logout").header("Origin", "https://app.example")
                 .header("Access-Control-Request-Method", "POST").header("Access-Control-Request-Headers", "authorization,content-type"))
             .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", "https://app.example"));
+    }
+
+    // 헤더가 없거나 만료된 access가 있어도 자녀 입장은 JWT 검증 없이 성공한다.
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = "Bearer TEST_ONLY_EXPIRED")
+    void 자녀_입장은_JWT_검증을_건너뛴다(String authorization) throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        if (authorization != null) {
+            headers.set(HttpHeaders.AUTHORIZATION, authorization);
+        }
+        when(jwt.validate("TEST_ONLY_EXPIRED", TokenType.ACCESS)).thenThrow(new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED));
+        when(familyService.joinAsChild("K7MP2Q")).thenReturn(new ChildJoinResult(43L, false));
+
+        mvc.perform(post("/api/v1/families/join").headers(headers).contentType("application/json")
+                .content("{\"inviteCode\":\"K7MP2Q\"}"))
+            .andExpect(status().isOk());
+        verifyNoInteractions(jwt);
+    }
+
+    // 인증 헤더 없이 초대코드를 재발급하면 401 UNAUTHORIZED로 거절한다.
+    @Test
+    void 초대코드_재발급은_인증이_필요하다() throws Exception {
+        mvc.perform(post("/api/v1/families/me/invite-code"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        verifyNoInteractions(familyService);
     }
 
     @Configuration(proxyBeanMethods = false)

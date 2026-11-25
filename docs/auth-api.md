@@ -11,13 +11,13 @@
    프런트는 콜백 state가 자신이 보관한 값과 일치하는지 검사한다. 일치하지 않거나 제공자가 error를 반환하면
    로그인을 중단한다.
 3. 프런트가 `POST /api/v1/auth/social-login`에 provider, code, state를 JSON으로 보낸다.
-   JSON의 provider는 `GOOGLE`, `KAKAO`, `NAVER`이며 경로는 대소문자를 모두 허용한다.
+   provider는 `GOOGLE`, `KAKAO`, `NAVER`이며 경로와 JSON 모두 대소문자를 구분하지 않는다.
 4. 서버가 state를 한 번만 소비하고 제공자 토큰·프로필을 서버 간 호출로 조회한다.
    구글·카카오는 S256 PKCE를 사용한다. 네이버는 공식 API에 PKCE 규격이 없어 쓰지 않는다.
 5. 첫 로그인은 자동 가입한다. 닉네임은 제공자 값의 30자까지, 미제공 시 `우가차차_<임의 8자리>`다.
 
 state는 기본 5분이며 실패하면 authorize부터 다시 시작한다.
-공개 인증 API(authorize, social-login, refresh)는 Authorization 헤더를 무시하므로, 만료된 access가 붙어 있어도 호출할 수 있다.
+공개 API(authorize, social-login, refresh, 자녀 입장)는 Authorization 헤더를 무시하므로, 만료된 access가 붙어 있어도 호출할 수 있다.
 
 ```http
 POST /api/v1/auth/social-login
@@ -47,6 +47,57 @@ Content-Type: application/json
 수명 필드는 초 단위다. 응답은 제공자 토큰·원본 소셜 ID·이메일을 포함하지 않는다.
 같은 이메일이더라도 제공자가 다르면 별도 계정이다.
 
+## 자녀 입장(초대코드)
+
+부모가 `POST /api/v1/families`에 자녀 프로필(닉네임·이미지)을 보내 가족을 만들면 자녀 계정이 미리 만들어지고 초대코드가 발급된다.
+코드는 영문 대문자와 숫자로 구성된 6자리이며, 5분 동안 한 번만 쓸 수 있다.
+
+자녀 앱은 `POST /api/v1/families/join`에 초대코드를 보낸다. 대소문자를 구분하지 않고 앞뒤 공백을 무시한다.
+
+```http
+POST /api/v1/families/join
+Content-Type: application/json
+
+{"inviteCode":"K7MP2Q"}
+```
+
+응답은 소셜 로그인과 같은 형식이다. 자녀 앱은 `data.tokens`를 저장한다. `isNewUser`는 이번 입장이 첫 연결인지 나타낸다.
+
+```json
+{
+  "code": "SUCCESS",
+  "message": "요청이 성공했습니다.",
+  "data": {
+    "userId": 43,
+    "isNewUser": true,
+    "tokens": {
+      "tokenType": "Bearer",
+      "accessToken": "<app access JWT>",
+      "refreshToken": "<app refresh JWT>",
+      "accessTokenExpiresIn": 1800,
+      "refreshTokenExpiresIn": 1209600
+    }
+  }
+}
+```
+
+입장 응답이 404 `FAMILY_INVITE_CODE_NOT_FOUND`이면(코드 입력 오류·만료·이미 사용) 자녀는 부모에게 새 코드를 받아 다시 입력한다.
+
+부모 초대 화면은 `GET /api/v1/families/me`에서 자녀 구성원의 `connected`가 `true`가 되면 연결 완료 화면으로 넘어간다.
+코드를 사용했거나 코드가 만료되면 `inviteCode`는 `null`로 내려온다.
+`connected=false`이고 `inviteCode`가 `null`이면 코드가 만료된 것으로 보고 부모 초대 화면에 재발급 버튼을 표시한다.
+
+코드가 만료됐거나 앱 재설치·기기 변경 시 부모가 `POST /api/v1/families/me/invite-code`로 새 코드를 발급하면 이전 코드는 즉시 무효가 된다.
+이미 연결된 자녀는 `connected`가 계속 `true`이므로 앱 재설치·기기 변경용 재발급 화면에서는 이 값으로 연결 완료를 판단하지 않는다.
+응답의 `data`에는 새 코드와 만료 시각이 담긴다.
+
+```json
+{"inviteCode":"R8NW3A","inviteCodeExpiresAt":"2026-11-24T05:05:00Z"}
+```
+
+이미 연결된 자녀가 새 코드로 입장하면 같은 자녀 계정으로 로그인하며 `isNewUser`는 `false`다.
+이미 로그인한 기기는 보관한 refresh가 만료되기 전(기본 14일)에 토큰을 갱신해 로그인을 유지할 수 있다.
+
 ## 갱신과 로그아웃
 
 `POST /api/v1/auth/refresh`에 `{"refreshToken":"<app refresh JWT>"}`를 보낸다.
@@ -70,7 +121,9 @@ Content-Type: application/json
 | 401 | UNAUTHORIZED | 인증 헤더 없음 |
 | 401 | AUTH_TOKEN_EXPIRED | JWT 만료. refresh로 갱신한다 |
 | 401 | AUTH_TOKEN_INVALID | 그 외 JWT 오류, 이미 쓰였거나 로그아웃된 refresh. 다시 로그인한다 |
-| 403 | FORBIDDEN | 권한 거부 |
+| 403 | FORBIDDEN | 권한 거부(자녀의 초대코드 재발급 등) |
+| 404 | FAMILY_NOT_FOUND | 초대코드 재발급을 요청한 사용자가 속한 가족 없음 |
+| 404 | FAMILY_INVITE_CODE_NOT_FOUND | 없거나 만료됐거나 이미 사용한 가족 초대코드 |
 
 ## Redis
 
